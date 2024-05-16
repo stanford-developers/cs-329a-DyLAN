@@ -48,8 +48,8 @@ do
 
             echo "$subdir $min_file $max_file"
             # Run python script in background
-            # python llmlp_gen_math_listwise_deeper_markov.py "$subdir" "$min_file" "$max_file" "$MODEL" "$ENGINE" &
-            # echo "$subdir $min_file $max_file" &
+            python llmlp_gen_math_listwise_deeper_markov.py "$subdir" "$min_file" "$max_file" "$MODEL" "$ENGINE" &
+            echo "$subdir $min_file $max_file" &
         done
 
         # Wait for all background jobs to finish
