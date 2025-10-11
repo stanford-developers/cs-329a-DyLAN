@@ -328,8 +328,8 @@ def extract_math_answer(pred_str):
 def generate_answer(answer_context, model):
     try:
         completion = openai.ChatCompletion.create(
-                #   model=model,
-                  engine=model,
+                  model=model,
+                  # engine=model,
                   messages=answer_context,
                   temperature=TEMPERATURE,
                   max_tokens=MAX_TOKENS,
