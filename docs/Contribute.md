@@ -46,3 +46,61 @@ If you use PyCharm, configure it to use the virtualenv you created above.
 - Click **OK**, then **Apply**.
 
 4. Create a .env file using .env.example and add your API keys. DO NOT COMMIT YOUR API KEYS.
+5. Test API key in Python Shell:
+
+```python 
+import os, openai
+from dotenv import load_dotenv;
+
+load_dotenv()
+openai.api_base = os.getenv("TOGETHER_BASE_URL", "https://api.together.xyz/v1")
+openai.api_key = os.getenv("TOGETHER_API_KEY")
+r = openai.ChatCompletion.create(
+    model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+    messages=[{"role": "user", "content": "Reply with exactly: OK"}],
+    temperature=0
+)
+print(r["choices"][0]["message"]["content"])
+```
+
+You should get something like this:
+
+```
+>>> r = openai.ChatCompletion.create(
+...     model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+...     messages=[{"role": "user", "content": "Reply with exactly: OK"}],
+...     temperature=0
+... )
+>>> print(r["choices"][0]["message"]["content"])
+OK
+>>> print(r)
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "logprobs": null,
+      "message": {
+        "content": "OK",
+        "role": "assistant",
+        "tool_calls": []
+      },
+      "seed": 16791737139537046000
+    }
+  ],
+  "created": 1760223489,
+  "id": "oEovV3E-4Yz4kd-98d1f5e4eccf5580",
+  "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+  "object": "chat.completion",
+  "prompt": [],
+  "usage": {
+    "cached_tokens": 0,
+    "completion_tokens": 2,
+    "prompt_tokens": 40,
+    "total_tokens": 42
+  }
+}
+>>> 
+```
+
+6. 

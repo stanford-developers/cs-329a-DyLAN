@@ -8,6 +8,18 @@ from prettytable import PrettyTable
 from LLMLP import LLMLP
 from utils import *
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
+
+# Make DyLAN use Together's OpenAI-compatible endpoint
+#  - Map OPENAI_API_KEY so any internal code that expects it still works.
+os.environ.setdefault("OPENAI_API_KEY", os.getenv("TOGETHER_API_KEY", ""))
+openai.api_key = os.getenv("TOGETHER_API_KEY")
+openai.api_base = os.getenv("TOGETHER_BASE_URL", "https://api.together.xyz/v1")
+# Do NOT set api_type/api_version for Together with openai==0.27.x
+
 # openai.api_key =
 # openai.api_base =
 # openai.api_type =
@@ -17,7 +29,9 @@ from utils import *
 QUERY = r"""What 8 letter word can have a letter taken away and it still makes a word. Take another letter away and it still makes a word. Keep on doing that until you have one letter left. What is the word?"""
 
 EXP_NAME = "trial_1"
-MODEL = "chatgpt0301"
+# MODEL = "chatgpt0301"
+# Use a cheaper Together model for debugging.
+MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
 
 ACTIVATION = "listwise"
 TYPE = "open-ended"
