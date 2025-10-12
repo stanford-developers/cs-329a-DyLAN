@@ -1,7 +1,8 @@
 #!/bin/bash
 
-MODEL=gpt-3.5-turbo
+#MODEL=gpt-3.5-turbo
 # MODEL=gpt-4
+MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
 
 # specify your directory
 dir="<path-to-your-directory>"
