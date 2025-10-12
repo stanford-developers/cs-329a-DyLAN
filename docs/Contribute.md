@@ -320,5 +320,7 @@ Agent Importance Scores: [0.6071428571428571, 1.4642857142857142, 0.535714285714
 
 7. Download the MMLU dataset under this path `<repository_root>/data/MMLU`. Under `MMLU`, you should see auxiliary,
    test, val, and train folders. You can use the link from
-   their [repo](https://github.com/hendrycks/test?tab=readme-ov-file#).
+   their [repo](https://github.com/hendrycks/test?tab=readme-ov-file#). We can start by using `val` and evaluate with
+   `test` later. DyLAN doesn't use few-shot prompting so they don't rely on dev nor does it do fine tuning using
+   auxiliary_train so we can skip using that for now. I am using val to start for simplicity of implementation.
 8. 
