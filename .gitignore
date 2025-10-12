@@ -162,3 +162,4 @@ cython_debug/
 rebuttal/
 .idea
 data
+/code/MMLU/mmlu_downsampled_*/
