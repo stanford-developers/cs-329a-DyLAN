@@ -136,8 +136,8 @@ def generate_answer(answer_context, model):
     print(answer_context)
     try:
         completion = openai.ChatCompletion.create(
-                #   model=model,
-                  engine=model,
+                  model=model,
+                  # engine=model,
                   temperature=TEMPERATURE,
                   messages=answer_context,
                   max_tokens=MAX_TOKENS,

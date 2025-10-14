@@ -12,6 +12,17 @@ from utils import *
 # openai.api_type =
 # openai.api_version =
 
+import os
+from dotenv import load_dotenv
+import openai
+
+load_dotenv()  # so .env is loaded when this script is run
+
+# If you are using Together, mirror the demo setup:
+os.environ.setdefault("OPENAI_API_KEY", os.getenv("TOGETHER_API_KEY", ""))
+openai.api_key = os.getenv("TOGETHER_API_KEY")
+openai.api_base = os.getenv("TOGETHER_BASE_URL", "https://api.together.xyz/v1")
+
 QUERY_CSV = sys.argv[1]
 EXP_NAME = sys.argv[2]
 MODEL = sys.argv[3]

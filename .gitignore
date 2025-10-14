@@ -160,3 +160,6 @@ cython_debug/
 #.idea/
 
 rebuttal/
+.idea
+data
+/code/MMLU/mmlu_downsampled_*/
