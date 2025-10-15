@@ -163,3 +163,4 @@ rebuttal/
 .idea
 data
 /code/MMLU/mmlu_downsampled_*/
+code/MMLU/importance_*.csv
