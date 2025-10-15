@@ -1,7 +1,6 @@
 import ast
 import json
 import os
-import openai
 import random
 import sys
 from prettytable import PrettyTable
@@ -12,18 +11,6 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env
 load_dotenv()
-
-# Make DyLAN use Together's OpenAI-compatible endpoint
-#  - Map OPENAI_API_KEY so any internal code that expects it still works.
-os.environ.setdefault("OPENAI_API_KEY", os.getenv("TOGETHER_API_KEY", ""))
-openai.api_key = os.getenv("TOGETHER_API_KEY")
-openai.api_base = os.getenv("TOGETHER_BASE_URL", "https://api.together.xyz/v1")
-# Do NOT set api_type/api_version for Together with openai==0.27.x
-
-# openai.api_key =
-# openai.api_base =
-# openai.api_type =
-# openai.api_version =
 
 # Put your query here
 QUERY = r"""What 8 letter word can have a letter taken away and it still makes a word. Take another letter away and it still makes a word. Keep on doing that until you have one letter left. What is the word?"""
