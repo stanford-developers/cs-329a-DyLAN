@@ -1,6 +1,6 @@
 import random
 import re
-from utils import parse_single_choice, generate_answer
+from utils import parse_single_choice, generate_answer, ConcurrentLLMProcessor, create_concurrent_processor
 from prompt_lib import ROLE_MAP, construct_ranking_message, construct_message, SYSTEM_PROMPT_MMLU, ROLE_MAP_MATH, SYSTEM_PROMPT_MATH
 
 

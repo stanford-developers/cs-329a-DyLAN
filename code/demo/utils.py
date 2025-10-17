@@ -3,10 +3,16 @@ import os
 import re
 import time
 import pandas as pd
+import threading
+import logging
+from datetime import datetime
+from typing import List, Dict, Union
 from prompt_lib import MMLU_QUESTION, COMPLEX_COT_EXAMPLES, TEMPERATURE, MAX_TOKENS
 from together import Together
 import backoff
 from together.error import RateLimitError, APIError
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 
 
 class OutOfQuotaException(Exception):
@@ -336,7 +342,7 @@ def extract_math_answer(pred_str):
         pred=a
     return pred
 
-@backoff.on_exception(backoff.expo, (RateLimitError, APIError), max_tries=20)
+@backoff.on_exception(backoff.expo, (RateLimitError, APIError), max_tries=10)
 def generate_answer(answer_context, model):
     client = get_together_client()
     try:
@@ -357,6 +363,249 @@ def generate_answer(answer_context, model):
             raise e
 
     return completion.choices[0].message.content, completion.usage.prompt_tokens, completion.usage.completion_tokens
+
+
+class ConcurrentLLMProcessor:
+    """
+    Concurrent LLM request processor for efficiently sending multiple requests to large language models
+    """
+
+    def __init__(
+        self,
+        model: str = None,
+        system_prompt: str = None,
+        temperature: float = TEMPERATURE,
+        max_tokens: int = MAX_TOKENS,
+        max_workers: int = 8,
+        rate_limit_delay: float = 0.12,
+    ):
+        """
+        Initialize concurrent LLM processor
+
+        Args:
+            model (str): Model name
+            system_prompt (str): System prompt
+            temperature (float): Temperature parameter
+            max_tokens (int): Maximum number of tokens
+            max_workers (int): Maximum number of concurrent worker threads
+            rate_limit_delay (float): Delay time between requests (seconds)
+        """
+        self.model = model
+        self.system_prompt = system_prompt
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.max_workers = max_workers
+        self.rate_limit_delay = rate_limit_delay
+        self.lock = threading.Lock()
+
+    @backoff.on_exception(backoff.expo, (RateLimitError, APIError), max_tries=10)
+    def _make_completion_request(self, messages: List[Dict[str, str]]) -> tuple:
+        """
+        Send a single completion request with retry logic
+
+        Args:
+            messages (List[Dict[str, str]]): List of messages to send
+
+        Returns:
+            tuple: (response_content, prompt_tokens, completion_tokens)
+        """
+        client = get_together_client()
+        try:
+            completion = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                n=1
+            )
+        except RateLimitError as e:
+            error_message = str(e)
+            if "quota" in error_message.lower():
+                raise OutOfQuotaException(os.getenv("TOGETHER_API_KEY"))
+            elif "terminated" in error_message.lower() or "violation" in error_message.lower():
+                raise AccessTerminatedException(os.getenv("TOGETHER_API_KEY"))
+            else:
+                raise e
+
+        return completion.choices[0].message.content, completion.usage.prompt_tokens, completion.usage.completion_tokens
+
+    def send_request(self, prompt: str) -> tuple:
+        """
+        Send a single request to the model and return the response
+
+        Args:
+            prompt (str): Prompt to send
+
+        Returns:
+            tuple: (response_content, prompt_tokens, completion_tokens) or error message
+        """
+        messages = [{"content": prompt, "role": "user"}]
+        if self.system_prompt:
+            messages.insert(0, {"content": self.system_prompt, "role": "system"})
+        
+        try:
+            return self._make_completion_request(messages)
+        except Exception as e:
+            import traceback
+            print(f"Error in send_request: {str(e)}")
+            print(f"Traceback:\n{traceback.format_exc()}")
+            return f"Error: {str(e)}", 0, 0
+
+    def send_requests(self, prompts: List[str]) -> List[tuple]:
+        """
+        Send multiple requests to the model concurrently and return response list
+
+        Args:
+            prompts (List[str]): List of prompts
+
+        Returns:
+            List[tuple]: List of responses, each element is (response_content, prompt_tokens, completion_tokens)
+        """
+        responses = [None] * len(prompts)
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+        
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = []
+            for i, prompt in enumerate(prompts):
+                # Add delay to avoid rate limits
+                if i > 0:
+                    time.sleep(self.rate_limit_delay)
+                future = executor.submit(self.send_request, prompt)
+                futures.append((i, future))
+
+            with tqdm(total=len(prompts), desc="Processing LLM requests") as progress_bar:
+                for i, future in futures:
+                    response = future.result()
+                    responses[i] = response
+                    if isinstance(response, tuple) and len(response) == 3:
+                        total_prompt_tokens += response[1]
+                        total_completion_tokens += response[2]
+                    progress_bar.update(1)
+
+        return responses
+
+    def __call__(self, prompts: Union[str, List[str]]) -> Union[tuple, List[tuple]]:
+        """
+        Allow instance to be called as a function
+
+        Args:
+            prompts (Union[str, List[str]]): Single prompt or list of prompts
+
+        Returns:
+            Union[tuple, List[tuple]]: Response or list of responses
+        """
+        if isinstance(prompts, str):
+            return self.send_request(prompts)
+        elif isinstance(prompts, list):
+            if not all(isinstance(p, str) for p in prompts):
+                raise ValueError("All prompts must be strings")
+            return self.send_requests(prompts)
+        else:
+            raise TypeError("Prompts must be strings or list of strings")
+
+
+def create_concurrent_processor(model: str = None, max_workers: int = 8) -> ConcurrentLLMProcessor:
+    """
+    Convenience function to create a concurrent LLM processor
+
+    Args:
+        model (str): Model name, if None use default model
+        max_workers (int): Maximum number of concurrent worker threads
+
+    Returns:
+        ConcurrentLLMProcessor: Configured concurrent processor
+    """
+    return ConcurrentLLMProcessor(
+        model=model,
+        max_workers=max_workers,
+        temperature=TEMPERATURE,
+        max_tokens=MAX_TOKENS
+    )
+
+
+def setup_logging(log_file: str = None, log_level: str = "INFO") -> logging.Logger:
+    """
+    Setup logging configuration for inference process tracking
+    
+    Args:
+        log_file (str): Path to log file, if None use timestamp-based filename
+        log_level (str): Logging level (DEBUG, INFO, WARNING, ERROR)
+    
+    Returns:
+        logging.Logger: Configured logger instance
+    """
+    if log_file is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = f"inference_log_{timestamp}.txt"
+    
+    # Create logger
+    logger = logging.getLogger("inference_logger")
+    logger.setLevel(getattr(logging, log_level.upper()))
+    
+    # Remove existing handlers to avoid duplicates
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    # Create file handler
+    file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+    file_handler.setLevel(getattr(logging, log_level.upper()))
+    
+    # Create console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    # Add handlers to logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    logger.info(f"Logging initialized. Log file: {log_file}")
+    return logger
+
+
+class InferenceTimer:
+    """
+    Context manager for timing inference processes
+    """
+    
+    def __init__(self, logger: logging.Logger = None, process_name: str = "Process"):
+        self.logger = logger
+        self.process_name = process_name
+        self.start_time = None
+        self.end_time = None
+        self.duration = None
+    
+    def __enter__(self):
+        self.start_time = time.time()
+        if self.logger:
+            self.logger.info(f"Starting {self.process_name}...")
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.end_time = time.time()
+        self.duration = self.end_time - self.start_time
+        
+        if self.logger:
+            self.logger.info(f"{self.process_name} completed in {self.duration:.2f} seconds")
+            self.logger.info("=" * 50)
+        
+        print(f"\n{self.process_name} completed in {self.duration:.2f} seconds")
+        print("=" * 50)
+    
+    def get_duration(self):
+        """Get the duration of the process"""
+        if self.duration is None and self.start_time is not None:
+            return time.time() - self.start_time
+        return self.duration
 
 def parse_single_choice(reply):
     pattern = r'\(([ABCDabcd])\)'
