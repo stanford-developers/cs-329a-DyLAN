@@ -330,7 +330,7 @@ Agent Importance Scores: [0.6071428571428571, 1.4642857142857142, 0.535714285714
 # From the repository root
 python code/preprocess/mmlu_prepare_subsets.py \
   --mmlu-root data/MMLU \
-  --source-split val \
+  --source-split test \
   --seed 0
 ```
 
@@ -339,5 +339,5 @@ python code/preprocess/mmlu_prepare_subsets.py \
 ```shell
 # From code/MMLU
 bash exp_mmlu.sh
-bash anal_imp.sh
+# TODO: Fix anal_imp.sh
 ```
