@@ -337,7 +337,15 @@ python code/preprocess/mmlu_prepare_subsets.py \
 9. To test run under code/MMLU:
 
 ```shell
-# From code/MMLU
+# From repo root
+cd code/MMLU
+
+# Recommended: override these per run
+export MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
+export MMLU_DIR="$PWD/../../data/MMLU/one_percent_team_selection"   # your 1% slice
+export EXP_NAME="mmlu_1pct"
+export MAX_PARALLEL=4   # throttle concurrent CSV jobs
+
+# Kick off the run (this will ALSO run anal_imp.sh when all jobs finish)
 bash exp_mmlu.sh
-# TODO: Fix anal_imp.sh
 ```
