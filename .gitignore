@@ -164,3 +164,4 @@ rebuttal/
 data
 /code/MMLU/mmlu_downsampled_*/
 code/MMLU/importance_*.csv
+code/MMLU/*_Economist_Doctor_Lawyer_Mathematician_Psychologist_Programmer_Historian/

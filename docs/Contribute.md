@@ -322,10 +322,30 @@ Agent Importance Scores: [0.6071428571428571, 1.4642857142857142, 0.535714285714
    test, val, and train folders. You can use the link from
    their [repo](https://github.com/hendrycks/test?tab=readme-ov-file#). We can start by using `val` and evaluate with
    `test` later. DyLAN doesn't use few-shot prompting so they don't rely on dev nor does it do fine tuning using
-   auxiliary_train so we can skip using that for now. I am using val to start for simplicity of implementation.
-8. To test run:
+   auxiliary_train so we can skip using that for now. I am using test to start for simplicity of implementation.
+
+8. Preprocess dataset:
+
 ```shell
-# From MMLU
+# From the repository root
+python code/preprocess/mmlu_prepare_subsets.py \
+  --mmlu-root data/MMLU \
+  --source-split test \
+  --seed 0
+```
+
+9. To test run under code/MMLU:
+
+```shell
+# From repo root
+cd code/MMLU
+
+# Recommended: override these per run
+export MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
+export MMLU_DIR="$PWD/../../data/MMLU/one_percent_team_selection"   # your 1% slice
+export EXP_NAME="mmlu_1pct"
+export MAX_PARALLEL=4   # throttle concurrent CSV jobs
+
+# Kick off the run (this will ALSO run anal_imp.sh when all jobs finish)
 bash exp_mmlu.sh
-bash anal_imp.sh
 ```

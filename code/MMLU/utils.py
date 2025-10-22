@@ -336,7 +336,7 @@ def extract_math_answer(pred_str):
         pred=a
     return pred
 
-@backoff.on_exception(backoff.expo, (RateLimitError, APIError), max_tries=20)
+@backoff.on_exception(backoff.expo, (RateLimitError, APIError), max_tries=5)
 def generate_answer(answer_context, model):
     print("question context: ")
     print(answer_context)
