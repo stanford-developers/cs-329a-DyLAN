@@ -19,7 +19,7 @@ MODEL="${MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo-Free}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Your small MMLU slice (3 csvs)
-dir="$REPO_ROOT/data/MMLU/val"
+dir="$REPO_ROOT/data/MMLU/one_percent_team_selection"
 exp_name="mmlu_downsampled"
 
 # This folder name must match what the Python code and anal_imp.sh expect
