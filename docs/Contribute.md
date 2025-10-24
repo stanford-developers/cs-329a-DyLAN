@@ -328,10 +328,12 @@ Agent Importance Scores: [0.6071428571428571, 1.4642857142857142, 0.535714285714
 
 ```shell
 # From the repository root
-python code/preprocess/mmlu_prepare_subsets.py \
+python code/preprocess/mmlu_prepare_subsets_v2.py \
   --mmlu-root data/MMLU \
-  --source-split test \
-  --seed 0
+  --seed 0 \
+  --eval-frac 0.20 \
+  --sel-small-frac 0.01 \
+  --sel-large-frac 0.10
 ```
 
 9. To test run under code/MMLU:
@@ -342,10 +344,12 @@ cd code/MMLU
 
 # Recommended: override these per run
 export MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
-export MMLU_DIR="$PWD/../../data/MMLU/one_percent_team_selection"   # your 1% slice
+export MMLU_DIR="$PWD/../../data/MMLU/small_team_selection"   # your 1% slice
 export EXP_NAME="mmlu_1pct"
 export MAX_PARALLEL=4   # throttle concurrent CSV jobs
 
 # Kick off the run (this will ALSO run anal_imp.sh when all jobs finish)
 bash exp_mmlu.sh
 ```
+
+10. TODO: Add instructions to run an exp_mmlu_evaluation.sh script to report accuracy using input from (9).

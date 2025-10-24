@@ -17,7 +17,7 @@ fi
 # ------------------------------------------------------------
 MODEL="${MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo-Free}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-dir="${MMLU_DIR:-$REPO_ROOT/data/MMLU/val}"       # now overridable
+dir="${MMLU_DIR:-$REPO_ROOT/data/MMLU/small_team_selection}"       # now overridable
 exp_name="${EXP_NAME:-mmlu_downsampled}"          # now overridable
 ROLES="${ROLES:-['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']}"
 MAX_PARALLEL="${MAX_PARALLEL:-4}"                 # limit concurrency to be kind to rate limits
