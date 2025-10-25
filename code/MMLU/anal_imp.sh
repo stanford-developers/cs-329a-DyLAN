@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # Inputs must match exp_mmlu.sh
-EXP_NAME="${EXP_NAME:-mmlu_downsampled}"
-ROLES="${ROLES:-['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']}"
+EXP_NAME="mmlu_downsampled"
+ROLES="['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']"
 
 # Derive
 TOTAL_AGENTS="$(python - <<'PY'
-import ast,os
-roles = ast.literal_eval(os.environ.get("ROLES","[]"))
+import ast
+roles = ast.literal_eval("['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']")
 print(len(roles))
 PY
 )"

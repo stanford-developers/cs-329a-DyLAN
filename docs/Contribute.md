@@ -352,4 +352,188 @@ export MAX_PARALLEL=4   # throttle concurrent CSV jobs
 bash exp_mmlu.sh
 ```
 
-10. TODO: Add instructions to run an exp_mmlu_evaluation.sh script to report accuracy using input from (9).
+## Output File Analysis
+
+After running DyLAN experiments, you'll find three types of output files for each test case:
+
+### 1. JSON Files (`*.json`) - Complete Response Records
+**Purpose**: Store detailed response processes for each question
+**Content**:
+- Complete response text from each agent
+- Weight evaluation information between agents  
+- Null placeholders for inactive agents
+- Two-dimensional array structure organized by questions
+
+**Format**:
+```json
+[
+  [Agent0_response, weight_info, other_info],
+  [Agent1_response, weight_info, other_info],
+  [null, null, null],  // Inactive agent
+  ...
+]
+```
+
+**Usage**:
+- Record complete conversation history
+- Analyze agent response quality
+- Debugging and problem diagnosis
+- Follow-up research and analysis
+
+### 2. TXT Files (`*.txt`) - Statistical Summary
+**Purpose**: Store statistical summary of experimental results
+**Content**:
+- Accuracy list and average accuracy
+- Total response count and average response count
+- Importance score matrix
+- Average importance scores
+- Token usage statistics
+
+**Format**:
+```
+[True, True] 1.0                    # Accuracy and average accuracy
+10 5.0                             # Total responses and average responses
+[[0.2, 0.2, ...], [0, 0.2, ...]]  # Importance score matrix
+[0.1, 0.2, 0.2, ...]              # Average importance scores
+1787                               # Total prompt tokens
+4995                               # Total completion tokens
+```
+
+**Usage**:
+- Quick view of experimental results
+- Performance metrics statistics
+- System efficiency analysis
+- Batch processing and analysis
+
+### 3. LOG Files (`*.log`) - Runtime Logs
+**Purpose**: Record detailed log information during program execution
+**Content**:
+- Agent activation sequence and process
+- Complete conversation context
+- Answer parsing and weight processing
+- Consensus achievement process
+- System runtime status and timestamps
+
+**Format**:
+```
+0 0                                # Round and agent index
+question context:                  # Question context
+[System prompt and question]        # Complete context
+[Detailed response] → (B)         # Agent response
+[] → B                             # Answer parsing
+[]                                 # Weight processing
+Consensus answer: B                # Consensus result
+[END] timestamp file_info status elapsed_time  # End information
+```
+
+**Usage**:
+- Debugging and problem diagnosis
+- Monitor system runtime status
+- Analyze agent selection strategy
+- Performance optimization and improvement
+
+### File Relationship Summary
+
+| File Type | Main Content | Primary Usage | Detail Level |
+|-----------|-------------|---------------|--------------|
+| **JSON** | Agent response records | Data analysis, research | Medium |
+| **TXT** | Statistical summary | Quick result viewing | Concise |
+| **LOG** | Runtime logs | Debugging, monitoring | Most detailed |
+
+These three files together constitute a complete record of DyLAN system runtime, recording the entire process of multi-agent collaboration solving problems from different perspectives.
+
+## Evaluation Script
+
+### 10. Run Evaluation with Reduced Roles
+
+After running the main experiment and generating importance scores, you can evaluate the system with reduced roles using the `exp_mmlu_evaluation.sh` script:
+
+```shell
+# From code/MMLU directory
+cd code/MMLU
+
+# Basic evaluation (uses top 4 roles per question)
+bash exp_mmlu_evaluation.sh
+
+# Custom evaluation with different number of roles
+bash exp_mmlu_evaluation.sh --num-roles 3
+
+# Use different model and dataset
+bash exp_mmlu_evaluation.sh \
+  --model "gpt-4" \
+  --dataset "../../data/MMLU/test" \
+  --num-roles 5
+
+# Custom importance file and output directory
+bash exp_mmlu_evaluation.sh \
+  --importance-csv "custom_importance.csv" \
+  --output "my_evaluation_results"
+```
+
+### Script Features
+
+The evaluation script provides:
+
+- **Role Selection**: Automatically selects the top N most important roles per test based on importance scores
+- **Accuracy Reporting**: Calculates and reports accuracy metrics for each test and overall
+- **Efficiency Analysis**: Compares performance with full 7-role system
+- **Extensible Metrics**: Easy to add new evaluation metrics
+- **Parallel Processing**: Supports concurrent evaluation of multiple tests
+- **Detailed Logging**: Comprehensive logging and error handling
+
+### Output Files
+
+The evaluation generates:
+- `evaluation_results_Nroles.json`: Detailed metrics and results
+- `selected_roles_Nroles.json`: Role selection information for each test
+- `compare_with_full.py`: Comparison script for efficiency analysis
+- Individual test result files in organized directories
+
+### Usage Examples
+
+```shell
+# Evaluate with top 3 roles per question
+bash exp_mmlu_evaluation.sh --num-roles 3
+
+# Use specific model and custom dataset
+bash exp_mmlu_evaluation.sh \
+  --model "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free" \
+  --dataset "/path/to/test/data" \
+  --num-roles 4
+
+# Maximum parallelization for faster evaluation
+bash exp_mmlu_evaluation.sh --max-parallel 8 --num-roles 4
+```
+
+## Simple Evaluation Script
+
+### 11. Run Simple Evaluation with Reduced Roles
+
+For a simpler and more straightforward evaluation approach, you can use the `simple_eval.sh` script:
+
+```shell
+# From code/MMLU directory
+cd code/MMLU
+
+# Basic evaluation (uses top 4 roles per question)
+bash simple_eval.sh importance_1to7.csv ../../data/MMLU/test 4
+
+# Custom evaluation with different number of roles
+bash simple_eval.sh importance_1to7.csv ../../data/MMLU/test 3
+
+# Use different model
+bash simple_eval.sh importance_1to7.csv ../../data/MMLU/test 4 gpt-4
+
+# Use custom dataset path
+bash simple_eval.sh importance_1to7.csv /path/to/your/test/data 4
+```
+
+### Simple Script Features
+
+The simple evaluation script provides:
+
+- **Easy Role Selection**: Automatically selects top N roles per test based on importance scores
+- **Direct Execution**: Runs experiments sequentially without complex parallelization
+- **Clear Output**: Shows progress and results in a simple format
+- **Self-contained**: Creates temporary Python scripts and cleans them up automatically
+- **Error Handling**: Validates inputs and handles failures gracefully

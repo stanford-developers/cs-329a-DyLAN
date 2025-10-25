@@ -14,19 +14,28 @@ fi
 
 # ------------------------------------------------------------
 # Configurable knobs (can override via env)
+# meta-llama/Llama-3.2-3B-Instruct-Turbo -> change the model here
 # ------------------------------------------------------------
-MODEL="${MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo-Free}"
+MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-dir="${MMLU_DIR:-$REPO_ROOT/data/MMLU/small_team_selection}"       # now overridable
-exp_name="${EXP_NAME:-mmlu_downsampled}"          # now overridable
-ROLES="${ROLES:-['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']}"
-MAX_PARALLEL="${MAX_PARALLEL:-4}"                 # limit concurrency to be kind to rate limits
+dir="$REPO_ROOT/data/MMLU/one_percent_team_selection"
+exp_name="mmlu_downsampled"
+ROLES="['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']"
+MAX_PARALLEL=4
 
 # Output folder name must match what anal_imp.sh expects
 OUT_DIR="${exp_name}_$(echo "$ROLES" | tr -d "[]' " | tr ',' '_')"
 mkdir -p "$OUT_DIR"
 
 active_jobs() { jobs -rp | wc -l; }
+
+# Wait for any background job to finish (compatible with bash 3.2+)
+wait_any() {
+  local pids=($(jobs -rp))
+  if [[ ${#pids[@]} -gt 0 ]]; then
+    wait "${pids[0]}" || true
+  fi
+}
 
 shopt -s nullglob
 for file in "$dir"/*.csv; do
@@ -44,7 +53,7 @@ for file in "$dir"/*.csv; do
 
   # backpressure on background jobs
   while (( $(active_jobs) >= MAX_PARALLEL )); do
-    wait -n || true
+    wait_any
   done
 
   echo "Running $filename → $LOG_NAME"
