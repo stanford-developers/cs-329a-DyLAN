@@ -12,7 +12,7 @@ NUM_ROLES="${NUM_ROLES:-4}"  # Number of roles to select per question
 
 # Default paths
 IMPORTANCE_CSV="${IMPORTANCE_CSV:-importance_1to7.csv}"
-EVAL_DATASET="${EVAL_DATASET:-$SCRIPT_DIR/../../data/MMLU/test}"
+EVAL_DATASET="${EVAL_DATASET:-$SCRIPT_DIR/../../data/MMLU/evaluation}"
 OUTPUT_DIR="${OUTPUT_DIR:-evaluation_results}"
 
 usage() {
@@ -162,22 +162,38 @@ def select_top_roles(importance_csv, num_roles=4):
 def run_evaluation(test_file, selected_roles, model, roles_list, output_dir):
     """Run evaluation for a single test file"""
     filename = Path(test_file).stem
-    
+
+    # Handle mismatch between _test and _val suffixes
+    # Try exact match first, then try with _val suffix
+    lookup_filename = filename
     if filename not in selected_roles:
-        print(f"Warning: No importance data for {filename}, skipping")
+        # Try replacing _test with _val
+        if filename.endswith('_test'):
+            lookup_filename = filename.replace('_test', '_val')
+        elif not filename.endswith('_val'):
+            lookup_filename = filename + '_val'
+
+    if lookup_filename not in selected_roles:
+        print(f"Warning: No importance data for {filename} (tried {lookup_filename}), skipping")
         return None
-    
-    # Get selected roles for this test
-    test_roles = selected_roles[filename]
+
+    # Get selected roles for this test (use lookup_filename which matched)
+    test_roles = selected_roles[lookup_filename]
+
+    print(f"Matched {filename} → {lookup_filename} in importance data")
     
     # Create roles string for this specific test
     test_roles_str = str(test_roles)
     
     # Output files
     exp_name = f"eval_{filename}"
-    out_dir = os.path.join(output_dir, f"{exp_name}_{len(test_roles)}roles")
+
+    # Use the same folder name that llmlp_listwise_mmlu.py creates
+    # Format: exp_name_Role1_Role2_Role3_Role4
+    roles_str_clean = test_roles_str.replace(' ', '').replace('[', '').replace(']', '').replace(',', '_').replace("'", '')
+    out_dir = os.path.join(output_dir, f"{exp_name}_{roles_str_clean}")
     os.makedirs(out_dir, exist_ok=True)
-    
+
     log_file = os.path.join(out_dir, f"{filename}_eval.log")
     result_file = os.path.join(out_dir, f"{filename}_eval.txt")
     
@@ -187,24 +203,63 @@ def run_evaluation(test_file, selected_roles, model, roles_list, output_dir):
         return result_file
     
     print(f"Evaluating {filename} with roles: {test_roles}")
-    
-    # Import the main evaluation script
-    sys.path.append(os.path.dirname(__file__))
-    from llmlp_listwise_mmlu import main as eval_main
-    
+
+    # Run llmlp_listwise_mmlu.py as a subprocess
+    import subprocess
+
+    # Get the parent directory (where llmlp_listwise_mmlu.py is located)
+    # This script is in evaluation_results/, llmlp_listwise_mmlu.py is in parent dir
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    llmlp_script = os.path.join(script_dir, 'llmlp_listwise_mmlu.py')
+
+    # Expected output files created by llmlp_listwise_mmlu.py (in the same out_dir)
+    expected_txt = os.path.join(out_dir, f"{exp_name}_{len(test_roles)}3.txt")
+    expected_json = os.path.join(out_dir, f"{exp_name}_{len(test_roles)}3.json")
+
     try:
-        # Run evaluation
-        eval_main(test_file, filename, model, exp_name, test_roles_str)
-        
-        # Move results to our output directory
-        expected_result = f"{exp_name}_{len(test_roles)}3.txt"
-        if os.path.exists(expected_result):
-            os.rename(expected_result, result_file)
-        
-        return result_file
-        
+        # Build command
+        cmd = [
+            'python', llmlp_script,
+            test_file,           # QUERY_CSV
+            exp_name,            # EXP_NAME
+            model,               # MODEL
+            exp_name,            # DIR_NAME
+            test_roles_str       # ROLES
+        ]
+
+        # Run the command in the output directory so files are created there
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=output_dir)
+
+        if result.returncode != 0:
+            print(f"Error running evaluation for {filename}:")
+            print(result.stderr)
+            if result.stdout:
+                print("STDOUT:", result.stdout)
+            return None
+
+        # Check if files were created successfully
+        # expected_txt and expected_json already contain the full path
+        if os.path.exists(expected_txt):
+            # Rename the files to match our expected naming convention
+            import shutil
+            if expected_txt != result_file:
+                shutil.move(expected_txt, result_file)
+
+            # Also rename the JSON file if it exists
+            json_result_file = result_file.replace('.txt', '.json')
+            if os.path.exists(expected_json) and expected_json != json_result_file:
+                shutil.move(expected_json, json_result_file)
+
+            return result_file
+        else:
+            print(f"Warning: Expected output file not found: {expected_txt}")
+            print(f"STDOUT: {result.stdout}")
+            return None
+
     except Exception as e:
         print(f"Error evaluating {filename}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def calculate_metrics(result_files, importance_csv):
@@ -283,15 +338,16 @@ def calculate_metrics(result_files, importance_csv):
     }
 
 def main():
-    if len(sys.argv) != 6:
-        print("Usage: evaluate_roles.py <importance_csv> <dataset_dir> <model> <num_roles> <output_dir>")
+    if len(sys.argv) not in [6, 7]:
+        print("Usage: evaluate_roles.py <importance_csv> <dataset_dir> <model> <num_roles> <output_dir> [max_parallel]")
         sys.exit(1)
-    
+
     importance_csv = sys.argv[1]
     dataset_dir = sys.argv[2]
     model = sys.argv[3]
     num_roles = int(sys.argv[4])
     output_dir = sys.argv[5]
+    max_parallel = int(sys.argv[6]) if len(sys.argv) > 6 else 4
     
     print(f"Loading importance data from: {importance_csv}")
     selected_roles, all_roles = select_top_roles(importance_csv, num_roles)
@@ -306,14 +362,54 @@ def main():
             test_files.append(os.path.join(dataset_dir, file))
     
     print(f"Found {len(test_files)} test files")
-    
-    # Run evaluations
-    result_files = []
+    print(f"Running evaluations with max {max_parallel} parallel jobs")
+
+    # Filter test files to only those with importance data
+    files_to_process = []
     for test_file in test_files:
         filename = Path(test_file).stem
-        if filename in selected_roles:
-            result_file = run_evaluation(test_file, selected_roles, model, all_roles, output_dir)
-            result_files.append(result_file)
+
+        # Check if filename matches (with or without _test/_val conversion)
+        lookup_filename = filename
+        if filename not in selected_roles:
+            if filename.endswith('_test'):
+                lookup_filename = filename.replace('_test', '_val')
+            elif not filename.endswith('_val'):
+                lookup_filename = filename + '_val'
+
+        if lookup_filename in selected_roles:
+            files_to_process.append(test_file)
+
+    print(f"Processing {len(files_to_process)} test files with importance data")
+
+    # Run evaluations in parallel
+    import concurrent.futures
+    from functools import partial
+
+    result_files = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel) as executor:
+        # Create partial function with fixed arguments
+        eval_func = partial(run_evaluation,
+                           selected_roles=selected_roles,
+                           model=model,
+                           roles_list=all_roles,
+                           output_dir=output_dir)
+
+        # Submit all jobs and collect futures
+        future_to_file = {executor.submit(eval_func, test_file): test_file
+                         for test_file in files_to_process}
+
+        # Process results as they complete
+        for future in concurrent.futures.as_completed(future_to_file):
+            test_file = future_to_file[future]
+            try:
+                result_file = future.result()
+                if result_file:
+                    result_files.append(result_file)
+            except Exception as e:
+                print(f"Error processing {test_file}: {e}")
+                import traceback
+                traceback.print_exc()
     
     # Calculate and report metrics
     print("\n" + "="*60)
@@ -370,7 +466,8 @@ python "$OUTPUT_DIR/evaluate_roles.py" \
     "$EVAL_DATASET" \
     "$MODEL" \
     "$NUM_ROLES" \
-    "$OUTPUT_DIR"
+    "$OUTPUT_DIR" \
+    "$MAX_PARALLEL"
 
 log "Evaluation completed!"
 log "Results saved in: $OUTPUT_DIR"
