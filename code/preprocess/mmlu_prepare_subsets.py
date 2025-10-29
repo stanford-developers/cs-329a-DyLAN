@@ -3,9 +3,9 @@
 Prepare MMLU subsets for DyLAN experiments.
 
 It creates three sibling directories under <MMLU root>:
-  - one_fifth_evaluation/         # 20% of the chosen split (val/test)
-  - one_percent_team_selection/   # 1% of that 20%
-  - ten_percent_team_selection/   # 10% of that 20%
+  - evaluation/         # 4% of the chosen split (val/test)
+  - small_team_selection/   # 10% of that 4%
+  - medium_team_selection/   # 40% of that 4%
 
 Why:
   * Paper (GR/MMLU): down-sample the test set by 1/5 for evaluation.
@@ -29,9 +29,9 @@ import random
 from pathlib import Path
 from typing import List
 
-EVAL_FRACTION = 0.20   # 1/5
-SEL_SMALL = 0.01       # 1% of the 1/5
-SEL_MED = 0.10         # 10% of the 1/5
+EVAL_FRACTION = 0.04   # 4% of the chosen split (val/test)
+SEL_SMALL = 0.10       # 10% of the 4%
+SEL_MED = 0.40         # 40% of the 4%
 
 
 def read_rows(csv_path: Path) -> List[List[str]]:
@@ -69,24 +69,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mmlu-root", type=Path, required=True,
                     help="Path to MMLU root (the folder that contains val/, test/, train/, etc.)")
-    ap.add_argument("--source-split", choices=["val", "test"], default="val",
-                    help="Which split to start from (default: val).")
+    ap.add_argument("--source-split", choices=["val", "test"], default="test",
+                    help="Which split to start from (default: test).")
     ap.add_argument("--seed", type=int, default=0, help="Global seed for deterministic sampling.")
     ap.add_argument("--eval-frac", type=float, default=EVAL_FRACTION,
-                    help="Fraction for one_fifth_evaluation (default 0.20).")
+                    help="Fraction for evaluation (default 0.10).")
     ap.add_argument("--sel-small-frac", type=float, default=SEL_SMALL,
-                    help="Fraction (of the eval set) for one_percent_team_selection (default 0.01).")
+                    help="Fraction (of the eval set) for small_team_selection (default 0.20).")
     ap.add_argument("--sel-med-frac", type=float, default=SEL_MED,
-                    help="Fraction (of the eval set) for ten_percent_team_selection (default 0.10).")
+                    help="Fraction (of the eval set) for medium_team_selection (default 0.40).")
     args = ap.parse_args()
 
     src_dir = args.mmlu_root / args.source_split
     if not src_dir.exists():
         raise SystemExit(f"Source split not found: {src_dir}")
 
-    out_eval = args.mmlu_root / "one_fifth_evaluation"
-    out_sel1 = args.mmlu_root / "one_percent_team_selection"
-    out_sel10 = args.mmlu_root / "ten_percent_team_selection"
+    out_eval = args.mmlu_root / "evaluation"
+    out_sel1 = args.mmlu_root / "small_team_selection"
+    out_sel10 = args.mmlu_root / "medium_team_selection"
 
     created = {p: 0 for p in (out_eval, out_sel1, out_sel10)}
 

@@ -326,15 +326,30 @@ Agent Importance Scores: [0.6071428571428571, 1.4642857142857142, 0.535714285714
 
 8. Preprocess dataset:
 
+Use the [mmlu_prepare_subsets.py](../code/preprocess/mmlu_prepare_subsets.py) script to create three evaluation subsets from the MMLU dataset:
+
+- `evaluation/` - 4% of the chosen split for evaluation
+- `small_team_selection/` - 10% of the evaluation set (for smaller-scale team selection experiments)
+- `medium_team_selection/` - 40% of the evaluation set (for medium-scale team selection experiments)
+
 ```shell
 # From the repository root
-python code/preprocess/mmlu_prepare_subsets_v2.py \
+python code/preprocess/mmlu_prepare_subsets.py \
   --mmlu-root data/MMLU \
+  --source-split test \
   --seed 0 \
-  --eval-frac 0.20 \
-  --sel-small-frac 0.01 \
-  --sel-large-frac 0.10
+  --eval-frac 0.04 \
+  --sel-small-frac 0.10 \
+  --sel-med-frac 0.40
 ```
+
+**Parameters:**
+- `--mmlu-root`: Path to MMLU root directory (containing val/, test/, train/ folders)
+- `--source-split`: Which split to use as source (`val` or `test`, default: `test`)
+- `--seed`: Random seed for deterministic sampling (default: 0)
+- `--eval-frac`: Fraction for evaluation set (default: 0.04 = 4%)
+- `--sel-small-frac`: Fraction of eval set for small team selection (default: 0.10 = 10%)
+- `--sel-med-frac`: Fraction of eval set for medium team selection (default: 0.40 = 40%)
 
 9. To test run under code/MMLU:
 
