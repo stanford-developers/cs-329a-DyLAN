@@ -164,14 +164,18 @@ def run_evaluation(test_file, selected_roles, model, roles_list, output_dir):
     filename = Path(test_file).stem
 
     # Handle mismatch between _test and _val suffixes
-    # Try exact match first, then try with _val suffix
+    # Try exact match first, then try alternative suffix
     lookup_filename = filename
     if filename not in selected_roles:
-        # Try replacing _test with _val
-        if filename.endswith('_test'):
+        # Try replacing _val with _test (in case importance CSV uses _val)
+        if filename.endswith('_val'):
+            lookup_filename = filename.replace('_val', '_test')
+        # Try replacing _test with _val (in case importance CSV uses _val)
+        elif filename.endswith('_test'):
             lookup_filename = filename.replace('_test', '_val')
-        elif not filename.endswith('_val'):
-            lookup_filename = filename + '_val'
+        # Try appending _test if no suffix
+        elif '_test' not in filename and '_val' not in filename:
+            lookup_filename = filename + '_test'
 
     if lookup_filename not in selected_roles:
         print(f"Warning: No importance data for {filename} (tried {lookup_filename}), skipping")
@@ -285,9 +289,20 @@ def calculate_metrics(result_files, importance_csv):
                 lines = f.readlines()
             
             if len(lines) >= 6:
-                # Parse results (same format as original)
-                accs = ast.literal_eval(lines[0].strip())
-                resp_cnts = ast.literal_eval(lines[1].strip())
+                # Parse results (format: "[list] number" for lines 0-1, "[list]" for lines 2-3)
+                # Line 0: [True, False, ...] 0.5  (accuracies and average)
+                # Line 1: 24 12.0  (total responses and average)
+                # Line 2: [[importance matrix]]
+                # Line 3: [average importances]
+                # Line 4: prompt_tokens
+                # Line 5: completion_tokens
+
+                accs_parts = lines[0].strip().rsplit(' ', 1)
+                accs = ast.literal_eval(accs_parts[0])
+
+                resp_parts = lines[1].strip().split(' ', 1)
+                total_resp = int(resp_parts[0])
+
                 importances = ast.literal_eval(lines[2].strip())
                 avg_importances = ast.literal_eval(lines[3].strip())
                 prompt_tokens = int(lines[4].strip())
@@ -296,7 +311,7 @@ def calculate_metrics(result_files, importance_csv):
                 # Calculate metrics for this test
                 test_questions = len(accs)
                 test_correct = sum(accs)
-                test_responses = sum(resp_cnts)
+                test_responses = total_resp
                 
                 total_questions += test_questions
                 total_correct += test_correct
@@ -372,10 +387,15 @@ def main():
         # Check if filename matches (with or without _test/_val conversion)
         lookup_filename = filename
         if filename not in selected_roles:
-            if filename.endswith('_test'):
+            # Try replacing _val with _test (in case importance CSV uses _val)
+            if filename.endswith('_val'):
+                lookup_filename = filename.replace('_val', '_test')
+            # Try replacing _test with _val (in case importance CSV uses _val)
+            elif filename.endswith('_test'):
                 lookup_filename = filename.replace('_test', '_val')
-            elif not filename.endswith('_val'):
-                lookup_filename = filename + '_val'
+            # Try appending _test if no suffix
+            elif '_test' not in filename and '_val' not in filename:
+                lookup_filename = filename + '_test'
 
         if lookup_filename in selected_roles:
             files_to_process.append(test_file)

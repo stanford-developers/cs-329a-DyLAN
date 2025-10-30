@@ -34,7 +34,7 @@ def process_lists(*lists):
 
                         # Add scores to data_dict with filename as key
                         # if filename[:-7].split('_')[-1] == 'test' or filename[:-7].split('_')[-2] == 'merged':
-                        if filename[:-7].split('_')[-1] == 'val' or filename[:-7].split('_')[-2] == 'merged': #
+                        if filename[:-7].split('_')[-1] == 'test' or filename[:-7].split('_')[-2] == 'merged': #
                             data_dict[filename[:-7]] = {score[1]+"_imp": score[0] for idx, score in enumerate(scores)}
                             data_dict[filename[:-7]]['acc'] = acc_score
                             data_dict[filename[:-7]]['resp'] = resp
