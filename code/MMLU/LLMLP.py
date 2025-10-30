@@ -138,7 +138,8 @@ class LLMLP:
             random.shuffle(loop_indices)
             idxs = []
             for idx, node_idx in enumerate(loop_indices):
-                if idx in idx_mask:
+                # TODO: report bug # if idx in idx_mask:
+                if node_idx % self.agents in idx_mask:
                     print(rid, idx)
                     self.nodes[node_idx].activate(question)
                     resp_cnt += 1
