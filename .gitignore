@@ -166,4 +166,4 @@ data
 code/MMLU/importance_*.csv
 code/MMLU/*_Economist_Doctor_Lawyer_Mathematician_Psychologist_Programmer_Historian/
 code/MMLU/eval_*/
-code/MMLU/evaluation_results/
+code/MMLU/evaluation_results_*/
