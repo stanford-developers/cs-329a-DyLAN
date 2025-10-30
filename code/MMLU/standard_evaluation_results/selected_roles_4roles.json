@@ -1,0 +1,344 @@
+{
+  "college_medicine_test": [
+    "Doctor",
+    "Historian",
+    "Economist",
+    "Lawyer"
+  ],
+  "high_school_statistics_test": [
+    "Historian",
+    "Doctor",
+    "Economist",
+    "Psychologist"
+  ],
+  "human_aging_test": [
+    "Programmer",
+    "Psychologist",
+    "Historian",
+    "Economist"
+  ],
+  "high_school_world_history_test": [
+    "Economist",
+    "Lawyer",
+    "Programmer",
+    "Historian"
+  ],
+  "professional_law_test": [
+    "Mathematician",
+    "Economist",
+    "Doctor",
+    "Psychologist"
+  ],
+  "virology_test": [
+    "Programmer",
+    "Mathematician",
+    "Historian",
+    "Psychologist"
+  ],
+  "professional_psychology_test": [
+    "Mathematician",
+    "Psychologist",
+    "Doctor",
+    "Lawyer"
+  ],
+  "professional_medicine_test": [
+    "Historian",
+    "Doctor",
+    "Programmer",
+    "Economist"
+  ],
+  "machine_learning_test": [
+    "Lawyer",
+    "Mathematician",
+    "Psychologist",
+    "Economist"
+  ],
+  "miscellaneous_test": [
+    "Economist",
+    "Historian",
+    "Doctor",
+    "Programmer"
+  ],
+  "high_school_psychology_test": [
+    "Mathematician",
+    "Economist",
+    "Lawyer",
+    "Psychologist"
+  ],
+  "college_computer_science_test": [
+    "Historian",
+    "Doctor",
+    "Economist",
+    "Lawyer"
+  ],
+  "conceptual_physics_test": [
+    "Economist",
+    "Programmer",
+    "Lawyer",
+    "Psychologist"
+  ],
+  "professional_accounting_test": [
+    "Historian",
+    "Economist",
+    "Programmer",
+    "Mathematician"
+  ],
+  "high_school_computer_science_test": [
+    "Programmer",
+    "Lawyer",
+    "Historian",
+    "Psychologist"
+  ],
+  "world_religions_test": [
+    "Economist",
+    "Programmer",
+    "Historian",
+    "Lawyer"
+  ],
+  "medical_genetics_test": [
+    "Historian",
+    "Doctor",
+    "Psychologist",
+    "Lawyer"
+  ],
+  "logical_fallacies_test": [
+    "Psychologist",
+    "Historian",
+    "Economist",
+    "Mathematician"
+  ],
+  "college_mathematics_test": [
+    "Doctor",
+    "Mathematician",
+    "Psychologist",
+    "Programmer"
+  ],
+  "high_school_european_history_test": [
+    "Historian",
+    "Economist",
+    "Mathematician",
+    "Doctor"
+  ],
+  "college_biology_test": [
+    "Psychologist",
+    "Doctor",
+    "Mathematician",
+    "Economist"
+  ],
+  "college_chemistry_test": [
+    "Economist",
+    "Mathematician",
+    "Programmer",
+    "Psychologist"
+  ],
+  "high_school_chemistry_test": [
+    "Historian",
+    "Doctor",
+    "Economist",
+    "Lawyer"
+  ],
+  "us_foreign_policy_test": [
+    "Historian",
+    "Economist",
+    "Doctor",
+    "Mathematician"
+  ],
+  "international_law_test": [
+    "Economist",
+    "Lawyer",
+    "Programmer",
+    "Historian"
+  ],
+  "high_school_physics_test": [
+    "Mathematician",
+    "Economist",
+    "Programmer",
+    "Historian"
+  ],
+  "computer_security_test": [
+    "Programmer",
+    "Economist",
+    "Mathematician",
+    "Historian"
+  ],
+  "high_school_mathematics_test": [
+    "Lawyer",
+    "Programmer",
+    "Historian",
+    "Economist"
+  ],
+  "sociology_test": [
+    "Programmer",
+    "Lawyer",
+    "Historian",
+    "Economist"
+  ],
+  "high_school_microeconomics_test": [
+    "Doctor",
+    "Economist",
+    "Historian",
+    "Mathematician"
+  ],
+  "philosophy_test": [
+    "Economist",
+    "Psychologist",
+    "Historian",
+    "Lawyer"
+  ],
+  "human_sexuality_test": [
+    "Economist",
+    "Lawyer",
+    "Mathematician",
+    "Doctor"
+  ],
+  "public_relations_test": [
+    "Psychologist",
+    "Programmer",
+    "Economist",
+    "Historian"
+  ],
+  "econometrics_test": [
+    "Economist",
+    "Lawyer",
+    "Psychologist",
+    "Programmer"
+  ],
+  "moral_scenarios_test": [
+    "Historian",
+    "Economist",
+    "Lawyer",
+    "Psychologist"
+  ],
+  "college_physics_test": [
+    "Economist",
+    "Doctor",
+    "Psychologist",
+    "Historian"
+  ],
+  "abstract_algebra_test": [
+    "Economist",
+    "Historian",
+    "Doctor",
+    "Psychologist"
+  ],
+  "clinical_knowledge_test": [
+    "Historian",
+    "Programmer",
+    "Lawyer",
+    "Doctor"
+  ],
+  "high_school_biology_test": [
+    "Psychologist",
+    "Mathematician",
+    "Doctor",
+    "Economist"
+  ],
+  "marketing_test": [
+    "Economist",
+    "Doctor",
+    "Mathematician",
+    "Programmer"
+  ],
+  "high_school_us_history_test": [
+    "Historian",
+    "Doctor",
+    "Psychologist",
+    "Lawyer"
+  ],
+  "astronomy_test": [
+    "Lawyer",
+    "Historian",
+    "Doctor",
+    "Economist"
+  ],
+  "nutrition_test": [
+    "Programmer",
+    "Economist",
+    "Mathematician",
+    "Doctor"
+  ],
+  "anatomy_test": [
+    "Psychologist",
+    "Historian",
+    "Mathematician",
+    "Economist"
+  ],
+  "high_school_government_and_politics_test": [
+    "Mathematician",
+    "Lawyer",
+    "Economist",
+    "Doctor"
+  ],
+  "business_ethics_test": [
+    "Doctor",
+    "Historian",
+    "Psychologist",
+    "Lawyer"
+  ],
+  "prehistory_test": [
+    "Mathematician",
+    "Historian",
+    "Economist",
+    "Lawyer"
+  ],
+  "elementary_mathematics_test": [
+    "Doctor",
+    "Programmer",
+    "Psychologist",
+    "Lawyer"
+  ],
+  "high_school_macroeconomics_test": [
+    "Mathematician",
+    "Programmer",
+    "Psychologist",
+    "Doctor"
+  ],
+  "formal_logic_test": [
+    "Psychologist",
+    "Programmer",
+    "Economist",
+    "Lawyer"
+  ],
+  "global_facts_test": [
+    "Economist",
+    "Mathematician",
+    "Doctor",
+    "Lawyer"
+  ],
+  "jurisprudence_test": [
+    "Historian",
+    "Economist",
+    "Programmer",
+    "Doctor"
+  ],
+  "electrical_engineering_test": [
+    "Programmer",
+    "Historian",
+    "Doctor",
+    "Psychologist"
+  ],
+  "high_school_geography_test": [
+    "Lawyer",
+    "Doctor",
+    "Historian",
+    "Mathematician"
+  ],
+  "management_test": [
+    "Programmer",
+    "Economist",
+    "Psychologist",
+    "Lawyer"
+  ],
+  "security_studies_test": [
+    "Economist",
+    "Historian",
+    "Lawyer",
+    "Doctor"
+  ],
+  "moral_disputes_test": [
+    "Mathematician",
+    "Economist",
+    "Programmer",
+    "Doctor"
+  ]
+}
