@@ -43,7 +43,7 @@ def main():
     for que, ans in qa_pairs:
         llmlp.zero_grad()
         res, resp_cnt, completions, prompt_tokens, completion_tokens = llmlp.forward(que)
-        imp_score = llmlp.backward(res)
+        imp_score = llmlp.backward(res, que)
 
         completion_list.append(completions)
         accs.append(ans == res)

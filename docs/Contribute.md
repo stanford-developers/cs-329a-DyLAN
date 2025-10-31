@@ -326,7 +326,8 @@ Agent Importance Scores: [0.6071428571428571, 1.4642857142857142, 0.535714285714
 
 8. Preprocess dataset:
 
-Use the [mmlu_prepare_subsets.py](../code/preprocess/mmlu_prepare_subsets.py) script to create three evaluation subsets from the MMLU dataset:
+Use the [mmlu_prepare_subsets.py](../code/preprocess/mmlu_prepare_subsets.py) script to create three evaluation subsets
+from the MMLU dataset:
 
 - `evaluation/` - 4% of the chosen split for evaluation
 - `small_team_selection/` - 10% of the evaluation set (for smaller-scale team selection experiments)
@@ -344,6 +345,7 @@ python code/preprocess/mmlu_prepare_subsets.py \
 ```
 
 **Parameters:**
+
 - `--mmlu-root`: Path to MMLU root directory (containing val/, test/, train/ folders)
 - `--source-split`: Which split to use as source (`val` or `test`, default: `test`)
 - `--seed`: Random seed for deterministic sampling (default: 0)
@@ -372,32 +374,51 @@ bash exp_mmlu.sh
 After running DyLAN experiments, you'll find three types of output files for each test case:
 
 ### 1. JSON Files (`*.json`) - Complete Response Records
+
 **Purpose**: Store detailed response processes for each question
 **Content**:
+
 - Complete response text from each agent
-- Weight evaluation information between agents  
+- Weight evaluation information between agents
 - Null placeholders for inactive agents
 - Two-dimensional array structure organized by questions
 
 **Format**:
+
 ```json
 [
-  [Agent0_response, weight_info, other_info],
-  [Agent1_response, weight_info, other_info],
-  [null, null, null],  // Inactive agent
+  [
+    Agent0_response,
+    weight_info,
+    other_info
+  ],
+  [
+    Agent1_response,
+    weight_info,
+    other_info
+  ],
+  [
+    null,
+    null,
+    null
+  ],
+  // Inactive agent
   ...
 ]
 ```
 
 **Usage**:
+
 - Record complete conversation history
 - Analyze agent response quality
 - Debugging and problem diagnosis
 - Follow-up research and analysis
 
 ### 2. TXT Files (`*.txt`) - Statistical Summary
+
 **Purpose**: Store statistical summary of experimental results
 **Content**:
+
 - Accuracy list and average accuracy
 - Total response count and average response count
 - Importance score matrix
@@ -405,6 +426,7 @@ After running DyLAN experiments, you'll find three types of output files for eac
 - Token usage statistics
 
 **Format**:
+
 ```
 [True, True] 1.0                    # Accuracy and average accuracy
 10 5.0                             # Total responses and average responses
@@ -415,14 +437,17 @@ After running DyLAN experiments, you'll find three types of output files for eac
 ```
 
 **Usage**:
+
 - Quick view of experimental results
 - Performance metrics statistics
 - System efficiency analysis
 - Batch processing and analysis
 
 ### 3. LOG Files (`*.log`) - Runtime Logs
+
 **Purpose**: Record detailed log information during program execution
 **Content**:
+
 - Agent activation sequence and process
 - Complete conversation context
 - Answer parsing and weight processing
@@ -430,6 +455,7 @@ After running DyLAN experiments, you'll find three types of output files for eac
 - System runtime status and timestamps
 
 **Format**:
+
 ```
 0 0                                # Round and agent index
 question context:                  # Question context
@@ -442,6 +468,7 @@ Consensus answer: B                # Consensus result
 ```
 
 **Usage**:
+
 - Debugging and problem diagnosis
 - Monitor system runtime status
 - Analyze agent selection strategy
@@ -449,19 +476,21 @@ Consensus answer: B                # Consensus result
 
 ### File Relationship Summary
 
-| File Type | Main Content | Primary Usage | Detail Level |
-|-----------|-------------|---------------|--------------|
-| **JSON** | Agent response records | Data analysis, research | Medium |
-| **TXT** | Statistical summary | Quick result viewing | Concise |
-| **LOG** | Runtime logs | Debugging, monitoring | Most detailed |
+| File Type | Main Content           | Primary Usage           | Detail Level  |
+|-----------|------------------------|-------------------------|---------------|
+| **JSON**  | Agent response records | Data analysis, research | Medium        |
+| **TXT**   | Statistical summary    | Quick result viewing    | Concise       |
+| **LOG**   | Runtime logs           | Debugging, monitoring   | Most detailed |
 
-These three files together constitute a complete record of DyLAN system runtime, recording the entire process of multi-agent collaboration solving problems from different perspectives.
+These three files together constitute a complete record of DyLAN system runtime, recording the entire process of
+multi-agent collaboration solving problems from different perspectives.
 
 ## Evaluation Script
 
 ### 10. Run Evaluation with Reduced Roles
 
-After running the main experiment and generating importance scores, you can evaluate the system with reduced roles using the `exp_mmlu_evaluation.sh` script:
+After running the main experiment and generating importance scores, you can evaluate the system with reduced roles using
+the `exp_mmlu_evaluation.sh` script:
 
 ```shell
 # From code/MMLU directory
@@ -499,6 +528,7 @@ The evaluation script provides:
 ### Output Files
 
 The evaluation generates:
+
 - `evaluation_results_Nroles.json`: Detailed metrics and results
 - `selected_roles_Nroles.json`: Role selection information for each test
 - `compare_with_full.py`: Comparison script for efficiency analysis
@@ -520,28 +550,34 @@ bash exp_mmlu_evaluation.sh \
 bash exp_mmlu_evaluation.sh --max-parallel 8 --num-roles 4
 ```
 
-### Optional: quality‑aware tie‑break in team selection (AIP)
+### Optional: quality‑aware AIP in the last round (LLM judge)
 
-When multiple agents in the **last active round** give the same final answer, DyLAN normally
-splits their credit **equally** in the AIP backward pass.  
-Set `TIE_BREAK_JUDGE=1` to ask an LLM “judge” to assign **soft weights** `[wA, wB]` that sum to 1,
-based on the *quality of their explanations*. These weights initialize the last layer’s
-importance and then flow backward as usual.
+When multiple **last‑round** agents produce the **same final answer**, the default DyLAN
+implementation splits their Agent Importance **equally** in the backward pass.
 
-**Enable it**
+You can enable a JSON‑only **LLM judge** that assigns a *soft* weight distribution based on
+the **quality of their reasoning**, not just correctness. This helps discount “lucky guess”
+explanations.
+
+**What it does**
+
+- Collects the full replies of the surviving agents that match the final answer in the last
+  active round (k ≥ 2).
+- **Shuffles** candidate order to reduce position bias (enabled by default).
+- Asks the LLM (same `MODEL`) to return a JSON array of k weights `[w1, …, wk]` with
+  `wi ≥ 0` and `∑ wi = 1`, then maps weights back to the original agent order.
+- Earlier layers still aggregate via the same peer‑rating edges.
+
+**Turn it on**
+
 ```bash
 # From repo root
 cd code/MMLU
+export AIP_JUDGE_WEIGHTS=1   # 0 (default) = off, 1 = on
 
-# Turn the judge on (0 = off, default)
-export TIE_BREAK_JUDGE=1
-
-# Optional: use a specific model for the judge (defaults to your main mtype)
-export TIE_BREAK_MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
-
-# Run your selection/eval as usual
-bash exp_mmlu.sh
-# (exp_mmlu.sh calls anal_imp.sh at the end)
+# Run as usual
+bash exp_mmlu.sh         # selection/eval pipeline; logs in OUT_DIR/*.log
+# (exp_mmlu.sh already invokes anal_imp.sh at the end)
 ```
 
 ## Simple Evaluation Script

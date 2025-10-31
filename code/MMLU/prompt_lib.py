@@ -188,47 +188,47 @@ The answer is -1"""
 
 
 # -------------------------------
-# Soft tie-break judge (JSON)
+# JSON-only judge for k candidates (soft weights)
 # -------------------------------
 
-def construct_weight_judge_message(pair_responses, question, qtype):
+def construct_weight_judge_message(responses, question, qtype):
     """
-    Build a JSON-only judging prompt that asks the LLM to return [w1, w2]
-    where w1+w2=1. pair_responses must be a list of exactly two strings.
+    Build a JSON-only judging prompt that asks the LLM to return a weight vector
+    [w1, w2, ..., wk] for k >= 2 candidate solutions, where all wi >= 0 and sum to 1.
+    The order of weights must follow the order in which the candidates are listed below.
+    NOTE: This function does NOT shuffle; shuffling is done by the caller for bias-avoidance.
     """
-    assert isinstance(pair_responses, list) and len(pair_responses) == 2, "Need two responses"
+    assert isinstance(responses, list) and len(responses) >= 2, "Need at least two responses"
+
     if qtype == "single_choice":
         header = (
-            "Here is the question:\n"
-            + question
-            + "\n\nBelow are two candidate solutions from two agents."
+            "Here is the question:\n" + question +
+            "\n\nBelow are candidate solutions from k agents."
         )
     elif qtype == "math_exp":
         header = (
-            "Follow the given examples and answer the mathematics problem.\n\n"
-            + question
-            + "\n\nBelow are two candidate solutions from two agents."
+            "Follow the given examples and answer the mathematics problem.\n\n" + question +
+            "\n\nBelow are candidate solutions from k agents."
         )
     else:
-        header = "Task description:\n" + question + "\n\nTwo candidate solutions follow."
+        header = "Task description:\n" + question + "\n\nBelow are candidate solutions from k agents."
 
-    body = (
-        "\n\nAgent A:\n```"
-        + str(pair_responses[0])
-        + "```\n\nAgent B:\n```"
-        + str(pair_responses[1])
-        + "```"
-    )
+    # List candidates in order (the caller may shuffle prior to calling this)
+    blocks = []
+    for i, text in enumerate(responses, start=1):
+        blocks.append(f"\n\nCandidate {i}:\n```{str(text)}```")
+    body = "".join(blocks)
 
     instructions = (
-        "\n\nAct as an impartial judge. Compare the **quality of reasoning** in Agent A vs. Agent B "
-        "for correctness, completeness, and clarity. Output a JSON array of two non‑negative numbers "
-        "that **sum to 1**, representing how much credit each solution deserves: [wA, wB]. "
-        "Return **only** the JSON array—no prose, no explanation."
+        "\n\nAct as an impartial judge. Compare the **quality of reasoning** of the candidates "
+        "for correctness, completeness, and clarity. Output **only** a JSON array of k non‑negative "
+        "numbers that **sum to 1**, representing how much credit each solution deserves: "
+        "[w1, w2, ..., wk].\n"
+        "Return **only** the JSON array — no prose, no code fences, no explanation."
     )
 
     messages = [
-        {"role": "system", "content": "You are a strict grading judge who outputs **JSON only**."},
+        {"role": "system", "content": "You are a strict grading judge who outputs JSON only."},
         {"role": "user",   "content": header + body + instructions},
     ]
     return messages

@@ -7,8 +7,6 @@ from prompt_lib import MMLU_QUESTION, COMPLEX_COT_EXAMPLES, TEMPERATURE, MAX_TOK
 from together import Together
 import backoff
 from together.error import RateLimitError, APIError
-import re
-from prompt_lib import construct_weight_judge_message
 
 
 class OutOfQuotaException(Exception):
@@ -414,38 +412,93 @@ def most_frequent(clist, cmp_func):
     return num, counter
 
 
-def _parse_weight_array(text: str):
+# ---- Soft tie-break judge helpers (k-way) ----
+import json, re, random
+
+
+def _extract_json_list(text):
     """
-    Extract first bracketed numeric array and return two normalized floats.
-    Fallback: None if cannot parse 2 numbers.
+    Extract the first JSON-like list '[ ... ]' from text and parse it.
+    Returns a Python list or None on failure.
     """
-    if not text:
+    if not isinstance(text, str):
         return None
-    m = re.search(r"\[([^\]]+)\]", text)
+    # strip code fences if any
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+
+    m = re.search(r"\[[\s\S]*\]", text)
     if not m:
         return None
-    nums = re.findall(r"-?\d+(?:\.\d+)?", m.group(0))
-    if len(nums) < 2:
+    frag = m.group(0)
+    try:
+        data = json.loads(frag)
+        if isinstance(data, list):
+            return data
+    except Exception:
         return None
-    w1, w2 = float(nums[0]), float(nums[1])
-    w1, w2 = max(0.0, w1), max(0.0, w2)
-    s = w1 + w2
-    if s <= 0:
-        return None
-    return [w1 / s, w2 / s]
+    return None
 
 
-def judge_tie_break_weights(pair_responses, question, qtype, model_name):
+def _sanitize_and_normalize(weights, k):
     """
-    Ask an LLM to assign soft weights [wA, wB] (summing to 1) to two finalist responses.
-    Returns a list [wA, wB]. Fallback is [0.5, 0.5] on any failure.
+    Convert to floats, clamp negatives to zero, and renormalize to sum 1.
+    If anything goes wrong (size mismatch or all zeros), return uniform.
     """
     try:
-        messages = construct_weight_judge_message(pair_responses, question, qtype)
-        reply, _ptok, _ctok = generate_answer(messages, model_name)  # existing utility
-        weights = _parse_weight_array(reply or "")
-        if not weights or len(weights) != 2:
-            return [0.5, 0.5]
-        return weights
+        vals = [float(x) for x in weights]
     except Exception:
-        return [0.5, 0.5]
+        return [1.0 / k] * k
+
+    if len(vals) != k:
+        return [1.0 / k] * k
+
+    vals = [0.0 if (v is None or not (v == v)) else float(v) for v in vals]  # NaN->0
+    vals = [max(0.0, v) for v in vals]
+    s = sum(vals)
+    if s <= 0.0:
+        return [1.0 / k] * k
+    return [v / s for v in vals]
+
+
+def judge_importance_weights(responses, question, qtype, model):
+    """
+    Bias-reduced k-way judge:
+      * Shuffle candidate order before prompting.
+      * Ask LLM for a JSON weight vector [w1..wk] (sum to 1).
+      * Map weights back to the original order.
+    Returns (weights_in_original_order, prompt_tokens, completion_tokens).
+    """
+    assert isinstance(responses, list) and len(responses) >= 2
+    k = len(responses)
+
+    # 1) Shuffle to reduce position bias
+    perm = list(range(k))
+    random.shuffle(perm)
+    shuffled = [responses[i] for i in perm]
+
+    # 2) Build messages (JSON-only)
+    from prompt_lib import construct_weight_judge_message
+    messages = construct_weight_judge_message(shuffled, question, qtype)
+
+    # 3) Call the same LLM backend as other calls (temperature 0)
+    reply, ptok, ctok = generate_answer(messages, model)
+
+    # 4) Parse and sanitize
+    parsed = _extract_json_list(reply)
+    if parsed is None:
+        norm = [1.0 / k] * k
+    else:
+        norm = _sanitize_and_normalize(parsed, k)
+
+    # 5) Map weights back to original order
+    #    norm is aligned with 'shuffled' order; invert permutation
+    inv = [0] * k
+    for pos, orig in enumerate(perm):
+        inv[orig] = pos
+    restored = [0.0] * k
+    for orig_idx in range(k):
+        restored[orig_idx] = norm[inv[orig_idx]]
+
+    return restored, ptok, ctok
