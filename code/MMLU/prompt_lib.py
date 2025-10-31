@@ -185,3 +185,50 @@ So, one solution is $x=0$ and the other two solutions are the solutions to $x^2 
 We could either factor the quadratic, or note that the sum of the solutions to this quadratic is $-(3/1)=-3$,
 so the mean of the three solutions to the original equation is $-3/3=\boxed{-1}$.
 The answer is -1"""
+
+
+# -------------------------------
+# Soft tie-break judge (JSON)
+# -------------------------------
+
+def construct_weight_judge_message(pair_responses, question, qtype):
+    """
+    Build a JSON-only judging prompt that asks the LLM to return [w1, w2]
+    where w1+w2=1. pair_responses must be a list of exactly two strings.
+    """
+    assert isinstance(pair_responses, list) and len(pair_responses) == 2, "Need two responses"
+    if qtype == "single_choice":
+        header = (
+            "Here is the question:\n"
+            + question
+            + "\n\nBelow are two candidate solutions from two agents."
+        )
+    elif qtype == "math_exp":
+        header = (
+            "Follow the given examples and answer the mathematics problem.\n\n"
+            + question
+            + "\n\nBelow are two candidate solutions from two agents."
+        )
+    else:
+        header = "Task description:\n" + question + "\n\nTwo candidate solutions follow."
+
+    body = (
+        "\n\nAgent A:\n```"
+        + str(pair_responses[0])
+        + "```\n\nAgent B:\n```"
+        + str(pair_responses[1])
+        + "```"
+    )
+
+    instructions = (
+        "\n\nAct as an impartial judge. Compare the **quality of reasoning** in Agent A vs. Agent B "
+        "for correctness, completeness, and clarity. Output a JSON array of two non‑negative numbers "
+        "that **sum to 1**, representing how much credit each solution deserves: [wA, wB]. "
+        "Return **only** the JSON array—no prose, no explanation."
+    )
+
+    messages = [
+        {"role": "system", "content": "You are a strict grading judge who outputs **JSON only**."},
+        {"role": "user",   "content": header + body + instructions},
+    ]
+    return messages

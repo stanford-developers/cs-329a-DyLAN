@@ -1,7 +1,9 @@
+import os
 import math
 import random
 from LLM_Neuron import LLMNeuron, LLMEdge, listwise_ranker_2
-from utils import parse_single_choice, most_frequent, is_equiv, extract_math_answer
+from utils import parse_single_choice, most_frequent, is_equiv, extract_math_answer, judge_tie_break_weights
+
 
 
 ACTIVATION_MAP = {'listwise': 0, 'trueskill': 1, 'window': 2, 'none': -1} # TODO: only 0 is implemented
@@ -25,6 +27,14 @@ class LLMLP:
         elif qtype == "math_exp":
             self.cmp_res = is_equiv
             self.ans_parser = extract_math_answer
+
+        # --- optional soft tie-break via LLM judge ---
+        self.tie_break_judge = bool(int(os.environ.get("TIE_BREAK_JUDGE", "0")))
+        # Which model to use for the judge; default to the main model type
+        self.tie_break_model = os.environ.get("TIE_BREAK_MODEL", self.mtype)
+
+        # cache the last question so backward() can access it for the judge
+        self._last_question = None
 
         self.init_nn(self.activation, self.agent_roles)
 
@@ -80,7 +90,9 @@ class LLMLP:
         resp_cnt = 0
         total_prompt_tokens, total_completion_tokens = 0, 0
         self.set_allnodes_deactivated()
+        # Remember the raw question text for the backward (tie-break) step.
         assert self.rounds > 2
+        self._last_question = question
         # question = format_question(question, self.qtype)
 
         # shuffle the order of agents
@@ -154,27 +166,73 @@ class LLMLP:
         completions = get_completions()
         return most_frequent([self.nodes[idx].get_answer() for idx in idxs], self.cmp_res)[0], resp_cnt, completions, total_prompt_tokens, total_completion_tokens
 
-
     def backward(self, result):
+        """
+        Backward importance aggregation.
+        If enabled (TIE_BREAK_JUDGE=1), the last active round with >=2 correct agents
+        calls an LLM judge to return soft weights [wA, wB] that sum to 1, rather than
+        splitting equally. Earlier layers aggregate via rated edges as before.
+        """
         flag_last = False
-        for rid in range(self.rounds-1, -1, -1):
+
+        for rid in range(self.rounds - 1, -1, -1):
+            layer_start = self.agents * rid
+            layer_end = self.agents * (rid + 1)
+            active_idxs = [idx for idx in range(layer_start, layer_end) if self.nodes[idx].active]
+
             if not flag_last:
-                if len([idx for idx in range(self.agents*rid, self.agents*(rid+1)) if self.nodes[idx].active]) > 0:
-                    flag_last = True
-                else:
+                # Find the *last* layer that actually fired
+                if len(active_idxs) == 0:
+                    continue
+                flag_last = True
+
+                # Who got the final answer correct in this last active layer?
+                correct_active = [
+                    idx for idx in active_idxs
+                    if self.cmp_res(self.nodes[idx].get_answer(), result)
+                ]
+
+                if len(correct_active) == 0:
+                    # should not happen in normal flow; just zero the layer
+                    for idx in range(layer_start, layer_end):
+                        self.nodes[idx].importance = 0.0
                     continue
 
-                ave_w = 1 / len([idx for idx in range(self.agents*rid, self.agents*(rid+1)) if self.nodes[idx].active and self.cmp_res(self.nodes[idx].get_answer(), result)])
-                for idx in range(self.agents*rid, self.agents*(rid+1)):
-                    if self.nodes[idx].active and self.cmp_res(self.nodes[idx].get_answer(), result):
-                        self.nodes[idx].importance = ave_w
-                    else:
-                        self.nodes[idx].importance = 0
+                # Optional: ask LLM judge to soft‑split credit between the two survivors.
+                # (By design, from round 3 onward the ranker keeps top-2, but guard anyway.)
+                if self.tie_break_judge and len(correct_active) >= 2 and self._last_question is not None:
+                    pair = correct_active[:2]  # only judge top two
+                    pair_responses = [self.nodes[i].get_reply() for i in pair]
+                    weights = judge_tie_break_weights(
+                        pair_responses,
+                        question=self._last_question,
+                        qtype=self.qtype,
+                        model_name=self.tie_break_model,
+                    )
+                    # initialize last-layer importances
+                    for idx in range(layer_start, layer_end):
+                        self.nodes[idx].importance = 0.0
+                    # assign weights to the two judged winners
+                    for w, i in zip(weights, pair):
+                        self.nodes[i].importance = float(w)
+                else:
+                    # Equal split among all correct actives (original behavior)
+                    denom = len(correct_active)
+                    ave_w = 1.0 / denom if denom > 0 else 0.0
+                    for idx in range(layer_start, layer_end):
+                        if self.nodes[idx].active and self.cmp_res(self.nodes[idx].get_answer(), result):
+                            self.nodes[idx].importance = ave_w
+                        else:
+                            self.nodes[idx].importance = 0.0
+
             else:
-                for idx in range(self.agents*rid, self.agents*(rid+1)):
-                    self.nodes[idx].importance = 0
+                # Standard backward aggregation through rated edges
+                for idx in range(layer_start, layer_end):
+                    self.nodes[idx].importance = 0.0
                     if self.nodes[idx].active:
                         for edge in self.nodes[idx].to_edges:
+                            # edge.a2 is the successor node
                             self.nodes[idx].importance += edge.weight * edge.a2.importance
 
         return [node.importance for node in self.nodes]
+
