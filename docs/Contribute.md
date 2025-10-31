@@ -520,6 +520,30 @@ bash exp_mmlu_evaluation.sh \
 bash exp_mmlu_evaluation.sh --max-parallel 8 --num-roles 4
 ```
 
+### Optional: quality‑aware tie‑break in team selection (AIP)
+
+When multiple agents in the **last active round** give the same final answer, DyLAN normally
+splits their credit **equally** in the AIP backward pass.  
+Set `TIE_BREAK_JUDGE=1` to ask an LLM “judge” to assign **soft weights** `[wA, wB]` that sum to 1,
+based on the *quality of their explanations*. These weights initialize the last layer’s
+importance and then flow backward as usual.
+
+**Enable it**
+```bash
+# From repo root
+cd code/MMLU
+
+# Turn the judge on (0 = off, default)
+export TIE_BREAK_JUDGE=1
+
+# Optional: use a specific model for the judge (defaults to your main mtype)
+export TIE_BREAK_MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
+
+# Run your selection/eval as usual
+bash exp_mmlu.sh
+# (exp_mmlu.sh calls anal_imp.sh at the end)
+```
+
 ## Simple Evaluation Script
 
 ### 11. Run Simple Evaluation with Reduced Roles

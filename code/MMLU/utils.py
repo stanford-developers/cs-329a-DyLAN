@@ -7,10 +7,13 @@ from prompt_lib import MMLU_QUESTION, COMPLEX_COT_EXAMPLES, TEMPERATURE, MAX_TOK
 from together import Together
 import backoff
 from together.error import RateLimitError, APIError
+import re
+from prompt_lib import construct_weight_judge_message
 
 
 class OutOfQuotaException(Exception):
     "Raised when the key exceeded the current quota"
+
     def __init__(self, key, cause=None):
         super().__init__(f"No quota for key: {key}")
         self.key = key
@@ -22,8 +25,10 @@ class OutOfQuotaException(Exception):
         else:
             return super().__str__()
 
+
 class AccessTerminatedException(Exception):
     "Raised when the key has been terminated"
+
     def __init__(self, key, cause=None):
         super().__init__(f"Access terminated key: {key}")
         self.key = key
@@ -35,8 +40,10 @@ class AccessTerminatedException(Exception):
         else:
             return super().__str__()
 
+
 # Initialize Together client
 _together_client = None
+
 
 def get_together_client():
     global _together_client
@@ -46,6 +53,7 @@ def get_together_client():
             raise ValueError("TOGETHER_API_KEY environment variable not set")
         _together_client = Together(api_key=api_key)
     return _together_client
+
 
 def _fix_a_slash_b(string):
     if len(string.split("/")) != 2:
@@ -61,6 +69,7 @@ def _fix_a_slash_b(string):
     except:
         return string
 
+
 def _fix_sqrt(string):
     if "\\sqrt" not in string:
         return string
@@ -74,6 +83,7 @@ def _fix_sqrt(string):
             new_substr = "\\sqrt" + split
         new_string += new_substr
     return new_string
+
 
 def _fix_fracs(string):
     substrs = string.split("\\frac")
@@ -108,6 +118,7 @@ def _fix_fracs(string):
     string = new_str
     return string
 
+
 def _remove_right_units(string):
     # "\\text{ " only ever occurs (at least in the val set) when describing units
     if "\\text{ " in string:
@@ -116,6 +127,7 @@ def _remove_right_units(string):
         return splits[0]
     else:
         return string
+
 
 def _strip_string(string):
     # linebreaks
@@ -186,6 +198,7 @@ def _strip_string(string):
 
     return string
 
+
 def parse_question_answer(df, ix):
     question = df.iloc[ix, 0]
     a = df.iloc[ix, 1]
@@ -199,32 +212,34 @@ def parse_question_answer(df, ix):
 
     return question, answer
 
+
 def get_mmlu_qa_pairs(csv_name):
     df = pd.read_csv(csv_name, header=None)
     ix = len(df)
     return [parse_question_answer(df, idx) for idx in range(ix)]
 
+
 def get_math_qa_pairs(sub_dir, min_file, max_file):
     def find_math_answer(s):
-        assert('boxed' in s)
+        assert ('boxed' in s)
         # s = s.replace(",", "")
         ans = s.split('boxed')[-1]
-        if(ans[0] == '{'):
+        if (ans[0] == '{'):
             stack = 1
             a = ''
             for c in ans[1:]:
-                if(c == '{'):
+                if (c == '{'):
                     stack += 1
                     a += c
-                elif(c == '}'):
+                elif (c == '}'):
                     stack -= 1
-                    if(stack == 0): break
+                    if (stack == 0): break
                     a += c
                 else:
                     a += c
         else:
             a = ans.split('$')[0].strip()
-        a=_strip_string(a)
+        a = _strip_string(a)
         return a
 
     def parse_single_qa_math(subdir, file):
@@ -259,6 +274,7 @@ def get_math_qa_pairs(sub_dir, min_file, max_file):
             ret_list.append((question, answer))
     return ret_list
 
+
 def is_equiv(str1, str2, verbose=False):
     if str1 is None and str2 is None:
         print("WARNING: Both None")
@@ -275,10 +291,11 @@ def is_equiv(str1, str2, verbose=False):
     except:
         return str1 == str2
 
+
 def extract_math_answer(pred_str):
-    if('The answer is ' in pred_str):
+    if ('The answer is ' in pred_str):
         pred = pred_str.split('The answer is ')[-1].strip()
-    elif('the answer is ' in pred_str):
+    elif ('the answer is ' in pred_str):
         pred = pred_str.split('the answer is ')[-1].strip()
     elif 'boxed' in pred_str:
         ans = pred_str.split('boxed')[-1]
@@ -300,21 +317,22 @@ def extract_math_answer(pred_str):
         else:
             a = ans.split('$')[0].strip()
         a = _strip_string(a)
-        pred=a
+        pred = a
 
     else:
         pattern = '-?\d*\.?\d+'
         pred = re.findall(pattern, pred_str)
-        if(len(pred) >= 1):
+        if (len(pred) >= 1):
             # print(pred_str)
             pred = pred[-1]
-        else: pred = ''
+        else:
+            pred = ''
     if pred != "":
         if pred[-1] == ".":
             pred = pred[:-1]
         if pred[-1] == "/":
             pred = pred[:-1]
-    pred=_strip_string(pred)
+    pred = _strip_string(pred)
     if 'boxed' in pred:
         ans = pred.split('boxed')[-1]
         if (ans[0] == '{'):
@@ -333,8 +351,9 @@ def extract_math_answer(pred_str):
         else:
             a = ans.split('$')[0].strip()
         a = _strip_string(a)
-        pred=a
+        pred = a
     return pred
+
 
 @backoff.on_exception(backoff.expo, (RateLimitError, APIError), max_tries=5)
 def generate_answer(answer_context, model):
@@ -360,6 +379,7 @@ def generate_answer(answer_context, model):
 
     return completion.choices[0].message.content, completion.usage.prompt_tokens, completion.usage.completion_tokens
 
+
 def parse_single_choice(reply):
     pattern = r'\(([ABCDabcd])\)'
     matches = re.findall(pattern, reply)
@@ -380,6 +400,7 @@ def parse_single_choice(reply):
 
     return solution
 
+
 def most_frequent(clist, cmp_func):
     counter = 0
     num = clist[0]
@@ -391,3 +412,40 @@ def most_frequent(clist, cmp_func):
             num = i
 
     return num, counter
+
+
+def _parse_weight_array(text: str):
+    """
+    Extract first bracketed numeric array and return two normalized floats.
+    Fallback: None if cannot parse 2 numbers.
+    """
+    if not text:
+        return None
+    m = re.search(r"\[([^\]]+)\]", text)
+    if not m:
+        return None
+    nums = re.findall(r"-?\d+(?:\.\d+)?", m.group(0))
+    if len(nums) < 2:
+        return None
+    w1, w2 = float(nums[0]), float(nums[1])
+    w1, w2 = max(0.0, w1), max(0.0, w2)
+    s = w1 + w2
+    if s <= 0:
+        return None
+    return [w1 / s, w2 / s]
+
+
+def judge_tie_break_weights(pair_responses, question, qtype, model_name):
+    """
+    Ask an LLM to assign soft weights [wA, wB] (summing to 1) to two finalist responses.
+    Returns a list [wA, wB]. Fallback is [0.5, 0.5] on any failure.
+    """
+    try:
+        messages = construct_weight_judge_message(pair_responses, question, qtype)
+        reply, _ptok, _ctok = generate_answer(messages, model_name)  # existing utility
+        weights = _parse_weight_array(reply or "")
+        if not weights or len(weights) != 2:
+            return [0.5, 0.5]
+        return weights
+    except Exception:
+        return [0.5, 0.5]

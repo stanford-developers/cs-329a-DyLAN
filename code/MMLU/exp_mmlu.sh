@@ -16,13 +16,13 @@ fi
 # Configurable knobs (can override via env)
 # meta-llama/Llama-3.2-3B-Instruct-Turbo -> change the model here
 # ------------------------------------------------------------
-# MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
-MODEL="meta-llama/Llama-3.2-3B-Instruct-Turbo"
+MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
+#MODEL="meta-llama/Llama-3.2-3B-Instruct-Turbo"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 dir="$REPO_ROOT/data/MMLU/small_team_selection" 
 exp_name="mmlu_downsampled"
 ROLES="['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']"
-MAX_PARALLEL=24
+MAX_PARALLEL=4
 
 # Output folder name must match what anal_imp.sh expects
 OUT_DIR="${exp_name}_$(echo "$ROLES" | tr -d "[]' " | tr ',' '_')"
