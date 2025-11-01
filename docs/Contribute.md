@@ -613,7 +613,7 @@ echo "Frozen current results under: $BASE_RUN"
 ```
 
 ### Analyze the run and then upload to Google sheets
-
+#### TODO: Fix early stopping calculation but rest should be ok
 ```bash
 python code/MMLU/summarize_run_with_categories.py \
   --run-dir runs/baseline_20251101-1402 \
