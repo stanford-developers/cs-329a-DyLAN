@@ -550,6 +550,21 @@ bash exp_mmlu_evaluation.sh \
 bash exp_mmlu_evaluation.sh --max-parallel 8 --num-roles 4
 ```
 
+### Optional: self-rationalizing evaluator (rationale for scoring)
+
+You can force agents to provide a more complete rationale for the scores they give to the answers they were provided with. 
+
+**Turn it on**
+
+```bash
+# From repo root
+cd code/MMLU
+export RATIONALE=1   # 0 (default) = off, 1 = on
+
+# Run as usual
+bash exp_mmlu.sh         
+```
+
 ### Optional: quality‑aware AIP in the last round (LLM judge)
 
 When multiple **last‑round** agents produce the **same final answer**, the default DyLAN
