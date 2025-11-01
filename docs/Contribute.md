@@ -552,7 +552,7 @@ bash exp_mmlu_evaluation.sh --max-parallel 8 --num-roles 4
 
 ### Optional: self-rationalizing evaluator (rationale for scoring)
 
-You can force agents to provide a more complete rationale for the scores they give to the answers they were provided with. 
+You can force agents to provide a more complete rationale for the scores they give to the answers they were provided with.
 
 **Turn it on**
 
@@ -562,7 +562,7 @@ cd code/MMLU
 export RATIONALE=1   # 0 (default) = off, 1 = on
 
 # Run as usual
-bash exp_mmlu.sh         
+bash exp_mmlu.sh
 ```
 
 ### Optional: quality‑aware AIP in the last round (LLM judge)
@@ -627,3 +627,54 @@ The simple evaluation script provides:
 - **Clear Output**: Shows progress and results in a simple format
 - **Self-contained**: Creates temporary Python scripts and cleans them up automatically
 - **Error Handling**: Validates inputs and handles failures gracefully
+
+### Baseline Evaluation (Single LLM Call)
+
+For comparison purposes, you can run a baseline evaluation that makes a single LLM call per question without multi-agent debate. This helps measure the improvement provided by the multi-agent system.
+
+**What it does**
+
+- Makes one LLM call per question with a simple prompt
+- No agent debate or importance scoring
+- Outputs same file formats (.txt, .json, .log) for easy comparison
+- Calculates accuracy and token usage
+- Computes aggregate statistics across all test files
+
+**How to run**
+
+```bash
+# From code/MMLU directory
+cd code/MMLU
+bash exp_baseline.sh
+```
+
+**Configuration options**
+
+You can customize the baseline run with environment variables:
+
+```bash
+# Change the model (default: Llama-3.3-70B-Instruct-Turbo-Free)
+export MODEL="meta-llama/Llama-3.2-3B-Instruct-Turbo"
+bash exp_baseline.sh
+
+# Change data directory (default: data/MMLU/evaluation)
+export DATA_DIR="/path/to/your/data"
+bash exp_baseline.sh
+
+# Change parallelism - number of concurrent jobs (default: 10)
+export MAX_PARALLEL=4
+bash exp_baseline.sh
+
+# Combine multiple options
+MODEL="gpt-4" MAX_PARALLEL=8 bash exp_baseline.sh
+```
+
+**Output files**
+
+Results are saved to `baseline_[MODEL_NAME]/` directory with the usual file format
+
+**Comparing with multi-agent results**
+
+Baseline outputs: baseline_*/
+Multi-agent outputs: mmlu_downsampled_*/
+```
