@@ -375,44 +375,29 @@ After running DyLAN experiments, you'll find three types of output files for eac
 
 ### 1. JSON Files (`*.json`) - Complete Response Records
 
-**Purpose**: Store detailed response processes for each question
-**Content**:
-
-- Complete response text from each agent
-- Weight evaluation information between agents
-- Null placeholders for inactive agents
-- Two-dimensional array structure organized by questions
-
+Null if agent didn't get to speak. Early stopping causes nulls as well. Agent can not speak mid-round due to
+early-stopping.
 **Format**:
 
 ```json
 [
   [
-    Agent0_response,
-    weight_info,
-    other_info
+    agent
+    1
+    round
+    1,
+    agent
+    1
+    round
+    2,
+    agent
+    1
+    round
+    3
   ],
-  [
-    Agent1_response,
-    weight_info,
-    other_info
-  ],
-  [
-    null,
-    null,
-    null
-  ],
-  // Inactive agent
   ...
 ]
 ```
-
-**Usage**:
-
-- Record complete conversation history
-- Analyze agent response quality
-- Debugging and problem diagnosis
-- Follow-up research and analysis
 
 ### 2. TXT Files (`*.txt`) - Statistical Summary
 
@@ -430,7 +415,7 @@ After running DyLAN experiments, you'll find three types of output files for eac
 ```
 [True, True] 1.0                    # Accuracy and average accuracy
 10 5.0                             # Total responses and average responses
-[[0.2, 0.2, ...], [0, 0.2, ...]]  # Importance score matrix
+[[0.2, 0.2, ...], [0, 0.2, ...]]  # Importance score matrix. Questions * importances dimensions. importances = 0...6 is for round 1, 7...13 is round 2 and so on.
 [0.1, 0.2, 0.2, ...]              # Average importance scores
 1787                               # Total prompt tokens
 4995                               # Total completion tokens
@@ -474,6 +459,8 @@ Consensus answer: B                # Consensus result
 - Analyze agent selection strategy
 - Performance optimization and improvement
 
+#### Make sure to check log file for errors in API calls.
+
 ### File Relationship Summary
 
 | File Type | Main Content           | Primary Usage           | Detail Level  |
@@ -496,7 +483,7 @@ the `exp_mmlu_evaluation.sh` script:
 # From code/MMLU directory
 cd code/MMLU
 
-# Basic evaluation (uses top 4 roles per question)
+# RUN THIS BY DEFAULT: Basic evaluation (uses top 4 roles per question)
 bash exp_mmlu_evaluation.sh
 
 # Custom evaluation with different number of roles
