@@ -583,3 +583,42 @@ The simple evaluation script provides:
 - **Clear Output**: Shows progress and results in a simple format
 - **Self-contained**: Creates temporary Python scripts and cleans them up automatically
 - **Error Handling**: Validates inputs and handles failures gracefully
+
+### Analyze Results:
+
+#### Copy your baseline to a specific directory:
+```bash
+# Go to the MMLU runner folder
+cd code/MMLU
+
+# Make a timestamped bucket to archive this run
+STAMP=$(date +%Y%m%d-%H%M)
+BASE_RUN="runs/baseline_$STAMP"
+mkdir -p "$BASE_RUN"
+
+# Move the selection outputs (the big per‑subject folder)
+# This matches your current exp_name in exp_mmlu.sh (default: mmlu_downsampled)
+mv mmlu_downsampled_* "$BASE_RUN"/
+
+# Save the importance CSV produced by anal_imp.sh
+# (this file is overwritten on every run, so copy it now)
+cp -f importance_1to7.csv "$BASE_RUN/importance_1to7_baseline.csv"
+
+# If you already ran evaluation, archive those too
+if [ -d evaluation_results ]; then
+  mv evaluation_results "$BASE_RUN/evaluation_results_baseline"
+fi
+
+echo "Frozen current results under: $BASE_RUN"
+```
+
+### Analyze the run and then upload to Google sheets
+
+```bash
+python code/MMLU/summarize_run_with_categories.py \
+  --run-dir runs/baseline_20251101-1402 \
+  --outfile runs/baseline_20251101-1402/run_summary.csv \
+  --price-in-per-m 0.05 \
+  --price-out-per-m 0.20
+```
+
