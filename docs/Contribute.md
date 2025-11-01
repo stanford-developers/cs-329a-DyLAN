@@ -359,12 +359,6 @@ python code/preprocess/mmlu_prepare_subsets.py \
 # From repo root
 cd code/MMLU
 
-# Recommended: override these per run
-export MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
-export MMLU_DIR="$PWD/../../data/MMLU/small_team_selection"   # your 1% slice
-export EXP_NAME="mmlu_1pct"
-export MAX_PARALLEL=4   # throttle concurrent CSV jobs
-
 # Kick off the run (this will ALSO run anal_imp.sh when all jobs finish)
 bash exp_mmlu.sh
 ```
@@ -382,18 +376,8 @@ early-stopping.
 ```json
 [
   [
-    agent
-    1
-    round
-    1,
-    agent
-    1
-    round
-    2,
-    agent
-    1
-    round
-    3
+    "agent 1 round 1",
+    "agent 1 round 2"
   ],
   ...
 ]
