@@ -359,12 +359,6 @@ python code/preprocess/mmlu_prepare_subsets.py \
 # From repo root
 cd code/MMLU
 
-# Recommended: override these per run
-export MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
-export MMLU_DIR="$PWD/../../data/MMLU/small_team_selection"   # your 1% slice
-export EXP_NAME="mmlu_1pct"
-export MAX_PARALLEL=4   # throttle concurrent CSV jobs
-
 # Kick off the run (this will ALSO run anal_imp.sh when all jobs finish)
 bash exp_mmlu.sh
 ```
@@ -375,44 +369,19 @@ After running DyLAN experiments, you'll find three types of output files for eac
 
 ### 1. JSON Files (`*.json`) - Complete Response Records
 
-**Purpose**: Store detailed response processes for each question
-**Content**:
-
-- Complete response text from each agent
-- Weight evaluation information between agents
-- Null placeholders for inactive agents
-- Two-dimensional array structure organized by questions
-
+Null if agent didn't get to speak. Early stopping causes nulls as well. Agent can not speak mid-round due to
+early-stopping.
 **Format**:
 
 ```json
 [
   [
-    Agent0_response,
-    weight_info,
-    other_info
+    "agent 1 round 1",
+    "agent 1 round 2"
   ],
-  [
-    Agent1_response,
-    weight_info,
-    other_info
-  ],
-  [
-    null,
-    null,
-    null
-  ],
-  // Inactive agent
   ...
 ]
 ```
-
-**Usage**:
-
-- Record complete conversation history
-- Analyze agent response quality
-- Debugging and problem diagnosis
-- Follow-up research and analysis
 
 ### 2. TXT Files (`*.txt`) - Statistical Summary
 
@@ -430,7 +399,7 @@ After running DyLAN experiments, you'll find three types of output files for eac
 ```
 [True, True] 1.0                    # Accuracy and average accuracy
 10 5.0                             # Total responses and average responses
-[[0.2, 0.2, ...], [0, 0.2, ...]]  # Importance score matrix
+[[0.2, 0.2, ...], [0, 0.2, ...]]  # Importance score matrix. Questions * importances dimensions. importances = 0...6 is for round 1, 7...13 is round 2 and so on.
 [0.1, 0.2, 0.2, ...]              # Average importance scores
 1787                               # Total prompt tokens
 4995                               # Total completion tokens
@@ -474,6 +443,8 @@ Consensus answer: B                # Consensus result
 - Analyze agent selection strategy
 - Performance optimization and improvement
 
+#### Make sure to check log file for errors in API calls.
+
 ### File Relationship Summary
 
 | File Type | Main Content           | Primary Usage           | Detail Level  |
@@ -496,7 +467,7 @@ the `exp_mmlu_evaluation.sh` script:
 # From code/MMLU directory
 cd code/MMLU
 
-# Basic evaluation (uses top 4 roles per question)
+# RUN THIS BY DEFAULT: Basic evaluation (uses top 4 roles per question)
 bash exp_mmlu_evaluation.sh
 
 # Custom evaluation with different number of roles
@@ -678,3 +649,41 @@ Results are saved to `baseline_[MODEL_NAME]/` directory with the usual file form
 Baseline outputs: baseline_*/
 Multi-agent outputs: mmlu_downsampled_*/
 ```
+### Analyze Results:
+
+#### Copy your baseline to a specific directory:
+```bash
+# Go to the MMLU runner folder
+cd code/MMLU
+
+# Make a timestamped bucket to archive this run
+STAMP=$(date +%Y%m%d-%H%M)
+BASE_RUN="runs/baseline_$STAMP"
+mkdir -p "$BASE_RUN"
+
+# Move the selection outputs (the big per‑subject folder)
+# This matches your current exp_name in exp_mmlu.sh (default: mmlu_downsampled)
+mv mmlu_downsampled_* "$BASE_RUN"/
+
+# Save the importance CSV produced by anal_imp.sh
+# (this file is overwritten on every run, so copy it now)
+cp -f importance_1to7.csv "$BASE_RUN/importance_1to7_baseline.csv"
+
+# If you already ran evaluation, archive those too
+if [ -d evaluation_results ]; then
+  mv evaluation_results "$BASE_RUN/evaluation_results_baseline"
+fi
+
+echo "Frozen current results under: $BASE_RUN"
+```
+
+### Analyze the run and then upload to Google sheets
+#### TODO: Fix early stopping calculation but rest should be ok
+```bash
+python code/MMLU/summarize_run_with_categories.py \
+  --run-dir runs/baseline_20251101-1402 \
+  --outfile runs/baseline_20251101-1402/run_summary.csv \
+  --price-in-per-m 0.05 \
+  --price-out-per-m 0.20
+```
+

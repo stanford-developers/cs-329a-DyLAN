@@ -28,11 +28,6 @@ class LLMLP:
             self.cmp_res = is_equiv
             self.ans_parser = extract_math_answer
 
-        # --- optional soft tie-break via LLM judge ---
-        self.tie_break_judge = bool(int(os.environ.get("TIE_BREAK_JUDGE", "0")))
-        # Which model to use for the judge; default to the main model type
-        self.tie_break_model = os.environ.get("TIE_BREAK_MODEL", self.mtype)
-
         # cache the last question so backward() can access it for the judge
         self._last_question = None
 

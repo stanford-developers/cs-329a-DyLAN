@@ -4,7 +4,7 @@ set -euo pipefail
 # DyLAN MMLU Evaluation Script
 # Takes eval dataset and importance1to7.csv, reduces roles to 4 per question
 # and reports accuracy + extensible metrics
-MODEL="${MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo-Free}"
+MODEL="${MODEL:-openai/gpt-oss-20b}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROLES="['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']"
 MAX_PARALLEL="${MAX_PARALLEL:-4}"
