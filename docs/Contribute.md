@@ -456,104 +456,151 @@ Consensus answer: B                # Consensus result
 These three files together constitute a complete record of DyLAN system runtime, recording the entire process of
 multi-agent collaboration solving problems from different perspectives.
 
-## Evaluation Script
+## Evaluation
 
-### 10. Run Evaluation with Reduced Roles
+### 10. Run evaluation with reduced roles **(+ bootstrap CIs)**
 
-After running the main experiment and generating importance scores, you can evaluate the system with reduced roles using
-the `exp_mmlu_evaluation.sh` script:
+After running the main experiment and generating importance scores, you can evaluate with a reduced team and get confidence intervals using `exp_mmlu_evaluation.sh`.
 
-```shell
-# From code/MMLU directory
+```bash
+# From repo root or code/MMLU
 cd code/MMLU
 
-# RUN THIS BY DEFAULT: Basic evaluation (uses top 4 roles per question)
+# Default run: top 4 roles per question, 1,000 bootstrap reps for 95% CIs
 bash exp_mmlu_evaluation.sh
 
-# Custom evaluation with different number of roles
+# Change the number of roles
 bash exp_mmlu_evaluation.sh --num-roles 3
 
-# Use different model and dataset
+# Use a different model and dataset
 bash exp_mmlu_evaluation.sh \
   --model "gpt-4" \
-  --dataset "../../data/MMLU/test" \
+  --dataset "../../data/MMLU/evaluation" \
   --num-roles 5
 
-# Custom importance file and output directory
+# Use a custom importance file and output directory
 bash exp_mmlu_evaluation.sh \
   --importance-csv "custom_importance.csv" \
   --output "my_evaluation_results"
+
+# Increase CI precision (more bootstrap reps)
+N_BOOT=5000 bash exp_mmlu_evaluation.sh
 ```
 
-### Script Features
+#### What the script does
 
-The evaluation script provides:
+* **Role selection (post‑selection / “evaluation”):** picks the top‑N roles per subject from `importance_1to7.csv` and re‑runs evaluation with those roles only.
+* **Pre‑selection metrics (7 roles):** computes baseline (full‑team) metrics directly from `importance_1to7.csv`.
+* **Metrics reported:**
+  Accuracy, **API calls** (total model responses), **tokens‑in**, **tokens‑out** — each **overall** and by **meta‑category** (STEM; humanities; social sciences; other (business, health, misc.)).
+* **Confidence intervals:** prints **95% bootstrap CIs** (1,000 reps by default) for every metric, both **pre** and **post** selection.
 
-- **Role Selection**: Automatically selects the top N most important roles per test based on importance scores
-- **Accuracy Reporting**: Calculates and reports accuracy metrics for each test and overall
-- **Efficiency Analysis**: Compares performance with full 7-role system
-- **Extensible Metrics**: Easy to add new evaluation metrics
-- **Parallel Processing**: Supports concurrent evaluation of multiple tests
-- **Detailed Logging**: Comprehensive logging and error handling
+> **Aside — How the bootstrap CIs work (in plain English)**
+> We treat each **test file** as a “unit” and resample those units **with replacement** 1,000×. For each resample we recompute aggregate metrics (accuracy, API calls, tokens‑in/out). The **2.5th–97.5th percentiles** across those resamples form the **95% CI**.
+> – This is a **block bootstrap** over tests, which respects per‑test correlation among questions.
+> – If pre‑selection tokens were not logged, we estimate them from post‑selection tokens using a single global **response‑ratio** (R=\frac{\text{total API calls (pre)}}{\text{total API calls (post)}}). Estimated token totals are clearly marked **“(est.)”** in the console output.
 
-### Output Files
+#### Output files
 
-The evaluation generates:
+* `evaluation_results_<N>roles.json` — per‑test details for the reduced‑role run (post‑selection).
+* `selected_roles_<N>roles.json` — the chosen roles per subject.
+* `metrics_summary_<N>roles.json` — **the main artifact**: overall and meta‑category **pre vs. post** metrics with **95% CIs**, plus a `notes` block indicating whether pre‑tokens were estimated and the value of (R) when applicable.
+* Per‑test folders under the output directory with raw logs and result artifacts.
 
-- `evaluation_results_Nroles.json`: Detailed metrics and results
-- `selected_roles_Nroles.json`: Role selection information for each test
-- `compare_with_full.py`: Comparison script for efficiency analysis
-- Individual test result files in organized directories
+> **Tip**: previous versions also generated `compare_with_full.py`. The new summary JSON already includes the pre‑vs‑post comparison and CIs; you no longer need that helper.
 
-### Usage Examples
+#### Interpreting metrics
 
-```shell
+* **Accuracy** is aggregated over all questions (or within each meta‑category).
+* **API calls** = total number of model responses consumed by the pipeline (sum of per‑question response counts).
+* **Tokens‑in/out** = sum of prompt/completion tokens across all questions (or within a meta‑category).
+* **Pre‑selection tokens**: if not logged in `importance_1to7.csv`, we estimate them from post‑selection tokens using the response‑ratio (R). Estimated values are annotated as **(est.)** in the console and captured in `metrics_summary_*.json > notes`.
+
+#### Usage examples
+
+```bash
 # Evaluate with top 3 roles per question
 bash exp_mmlu_evaluation.sh --num-roles 3
 
-# Use specific model and custom dataset
-bash exp_mmlu_evaluation.sh \
+# Specific model + dataset + more bootstrap reps
+N_BOOT=2000 bash exp_mmlu_evaluation.sh \
   --model "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free" \
-  --dataset "/path/to/test/data" \
+  --dataset "/path/to/evaluation" \
   --num-roles 4
 
-# Maximum parallelization for faster evaluation
+# Max parallelism for speed (I/O bound)
 bash exp_mmlu_evaluation.sh --max-parallel 8 --num-roles 4
 ```
 
-### Optional: quality‑aware AIP in the last round (LLM judge)
+---
 
-When multiple **last‑round** agents produce the **same final answer**, the default DyLAN
-implementation splits their Agent Importance **equally** in the backward pass.
+### Optional: quality‑aware AIP in the last round (LLM‑as‑Judge)
 
-You can enable a JSON‑only **LLM judge** that assigns a *soft* weight distribution based on
-the **quality of their reasoning**, not just correctness. This helps discount “lucky guess”
-explanations.
+When multiple **last‑round** agents produce the **same final answer**, DyLAN by default splits their Agent Importance equally in the backward pass. You can instead enable an **LLM judge** that returns a soft weight distribution based on the **quality of their reasoning**.
 
 **What it does**
 
-- Collects the full replies of the surviving agents that match the final answer in the last
-  active round (k ≥ 2).
-- **Shuffles** candidate order to reduce position bias (enabled by default).
-- Asks the LLM (same `MODEL`) to return a JSON array of k weights `[w1, …, wk]` with
-  `wi ≥ 0` and `∑ wi = 1`, then maps weights back to the original agent order.
-- Earlier layers still aggregate via the same peer‑rating edges.
+* Gathers all last‑round, same‑answer rationales; **shuffles** order to reduce position bias.
+* Asks the model to return JSON weights `[w1,…,wk]` with `wi ≥ 0` and `∑wi = 1`, then maps them back to the original agents.
+* Earlier layers still aggregate via peer‑rating edges.
 
-**Turn it on**
+**Enable it**
 
 ```bash
-# From repo root
 cd code/MMLU
 export AIP_JUDGE_WEIGHTS=1   # 0 (default) = off, 1 = on
-
-# Run as usual
-bash exp_mmlu.sh         # selection/eval pipeline; logs in OUT_DIR/*.log
-# (exp_mmlu.sh already invokes anal_imp.sh at the end)
+bash exp_mmlu.sh             # selection + eval; logs in OUT_DIR/*.log
 ```
+
+The evaluation scripts above work in either mode; metrics/CI reporting is unchanged.
+
+---
+
+### 11. Summarize an **existing** run (no re‑inference)
+
+If you already have a run directory with the usual artifacts (importance CSV and per‑test outputs), use `evaluate_existing_mmlu_run.sh` to compute the same metrics and **95% CIs** without re‑calling the model.
+
+**Expected layout (example):**
+
+```
+code/MMLU/runs/baseline_20251101-1402/
+├─ importance_1to7_baseline.csv
+├─ mmlu_downsampled_Economist_Doctor_Lawyer_Mathematician_Psychologist_Programmer_Historian/  # per-test outputs
+└─ evaluation_results_baseline/                                                                # (post) per-test folders
+```
+
+**Run it:**
+
+```bash
+# From code/MMLU
+bash evaluate_existing_mmlu_run.sh \
+  --run-dir "runs/baseline_20251101-1402" \
+  --n-boot 1000
+```
+
+**What it does**
+
+* Reads pre‑selection (7‑role) metrics from the `importance_1to7_*.csv` in `--run-dir`.
+* Parses post‑selection per‑test outputs under the evaluation results subfolder.
+* Computes **overall** and **meta‑category** metrics (accuracy, API calls, tokens‑in, tokens‑out) with **95% bootstrap CIs**.
+* Writes `metrics_summary_existing.json` into the run directory (same schema as the live evaluator’s `metrics_summary_<N>roles.json`) and prints a human‑readable summary to stdout.
+  If pre‑selection tokens are missing, it estimates them using the global response‑ratio (R) (marked **(est.)**), exactly as in the live evaluation script.
+
+**Overrides (optional):**
+
+```bash
+# If your run layout differs, you can pass explicit paths:
+bash evaluate_existing_mmlu_run.sh \
+  --importance-csv "path/to/importance_1to7.csv" \
+  --post-dir      "path/to/evaluation_results_dir" \
+  --n-boot 2000
+```
+
+---
 
 ## Simple Evaluation Script
 
-### 11. Run Simple Evaluation with Reduced Roles
+### 12. Run Simple Evaluation with Reduced Roles
 
 For a simpler and more straightforward evaluation approach, you can use the `simple_eval.sh` script:
 
@@ -583,42 +630,4 @@ The simple evaluation script provides:
 - **Clear Output**: Shows progress and results in a simple format
 - **Self-contained**: Creates temporary Python scripts and cleans them up automatically
 - **Error Handling**: Validates inputs and handles failures gracefully
-
-### Analyze Results:
-
-#### Copy your baseline to a specific directory:
-```bash
-# Go to the MMLU runner folder
-cd code/MMLU
-
-# Make a timestamped bucket to archive this run
-STAMP=$(date +%Y%m%d-%H%M)
-BASE_RUN="runs/baseline_$STAMP"
-mkdir -p "$BASE_RUN"
-
-# Move the selection outputs (the big per‑subject folder)
-# This matches your current exp_name in exp_mmlu.sh (default: mmlu_downsampled)
-mv mmlu_downsampled_* "$BASE_RUN"/
-
-# Save the importance CSV produced by anal_imp.sh
-# (this file is overwritten on every run, so copy it now)
-cp -f importance_1to7.csv "$BASE_RUN/importance_1to7_baseline.csv"
-
-# If you already ran evaluation, archive those too
-if [ -d evaluation_results ]; then
-  mv evaluation_results "$BASE_RUN/evaluation_results_baseline"
-fi
-
-echo "Frozen current results under: $BASE_RUN"
-```
-
-### Analyze the run and then upload to Google sheets
-#### TODO: Fix early stopping calculation but rest should be ok
-```bash
-python code/MMLU/summarize_run_with_categories.py \
-  --run-dir runs/baseline_20251101-1402 \
-  --outfile runs/baseline_20251101-1402/run_summary.csv \
-  --price-in-per-m 0.05 \
-  --price-out-per-m 0.20
-```
 
