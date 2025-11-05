@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# DyLAN MMLU Evaluation Script
-# Takes eval dataset and importance1to7.csv, reduces roles to 4 per question
-# and reports accuracy + extensible metrics
+# DyLAN MMLU Evaluation + CI Script
+# - Runs reduced-role evaluation (post-selection)
+# - Computes pre-selection (7-role) metrics from importance_1to7.csv
+# - Reports accuracy, API calls, tokens-in, tokens-out with 95% bootstrap CIs
+# - Breaks out metrics overall and by meta-category groups
+
 MODEL="${MODEL:-openai/gpt-oss-20b}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROLES="['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']"
 MAX_PARALLEL="${MAX_PARALLEL:-4}"
-NUM_ROLES="${NUM_ROLES:-4}"  # Number of roles to select per question
+NUM_ROLES="${NUM_ROLES:-4}"   # roles selected per question in evaluation
+N_BOOT="${N_BOOT:-1000}"      # bootstrap replicates for CI
 
 # Default paths
 IMPORTANCE_CSV="${IMPORTANCE_CSV:-importance_1to7.csv}"
@@ -19,98 +23,54 @@ usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-DyLAN MMLU Evaluation Script - Reduces roles to 4 per question based on importance scores
+Run reduced-role evaluation and report accuracy, API calls, tokens-in, tokens-out
+with 95% bootstrap CIs (overall and by meta-categories), and pre- vs post-selection.
 
 OPTIONS:
-    -m, --model MODEL              LLM model to use (default: meta-llama/Llama-3.3-70B-Instruct-Turbo-Free)
+    -m, --model MODEL              LLM model to use (default: openai/gpt-oss-20b)
     -i, --importance-csv FILE      Path to importance CSV file (default: importance_1to7.csv)
-    -d, --dataset DIR              Path to evaluation dataset directory (default: ../../data/MMLU/test)
-    -o, --output DIR               Output directory for results (default: evaluation_results)
-    -n, --num-roles NUM            Number of roles to select per question (default: 4)
+    -d, --dataset DIR              Path to evaluation dataset directory (default: ../../data/MMLU/evaluation)
+    -o, --output DIR               Output directory (default: evaluation_results)
+    -n, --num-roles NUM            Number of roles to select per question for evaluation (default: 4)
     -p, --max-parallel NUM         Maximum parallel jobs (default: 4)
-    -h, --help                     Show this help message
+    --n-boot NUM                   Bootstrap replicates for CI (default: 1000)
+    -h, --help                     Show help
 
 EXAMPLES:
-    # Basic evaluation with default settings
     $0
-
-    # Custom model and dataset
-    $0 --model "gpt-4" --dataset "/path/to/test/data"
-
-    # Select top 3 roles instead of 4
+    $0 --model "gpt-4" --dataset "/path/to/eval"
     $0 --num-roles 3
-
-    # Use custom importance file
-    $0 --importance-csv "custom_importance.csv"
+    $0 --importance-csv custom_importance.csv
+    N_BOOT=2000 $0                        # change # bootstrap reps
 EOF
 }
 
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
-}
-
-active_jobs() { 
-    jobs -rp | wc -l
-}
-
-wait_any() {
-    local pids=($(jobs -rp))
-    if [[ ${#pids[@]} -gt 0 ]]; then
-        wait "${pids[0]}" || true
-    fi
-}
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2; }
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -m|--model)
-            MODEL="$2"
-            shift 2
-            ;;
-        -i|--importance-csv)
-            IMPORTANCE_CSV="$2"
-            shift 2
-            ;;
-        -d|--dataset)
-            EVAL_DATASET="$2"
-            shift 2
-            ;;
-        -o|--output)
-            OUTPUT_DIR="$2"
-            shift 2
-            ;;
-        -n|--num-roles)
-            NUM_ROLES="$2"
-            shift 2
-            ;;
-        -p|--max-parallel)
-            MAX_PARALLEL="$2"
-            shift 2
-            ;;
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1" >&2
-            usage
-            exit 1
-            ;;
+        -m|--model) MODEL="$2"; shift 2;;
+        -i|--importance-csv) IMPORTANCE_CSV="$2"; shift 2;;
+        -d|--dataset) EVAL_DATASET="$2"; shift 2;;
+        -o|--output) OUTPUT_DIR="$2"; shift 2;;
+        -n|--num-roles) NUM_ROLES="$2"; shift 2;;
+        -p|--max-parallel) MAX_PARALLEL="$2"; shift 2;;
+        --n-boot) N_BOOT="$2"; shift 2;;
+        -h|--help) usage; exit 0;;
+        *) echo "Unknown option: $1" >&2; usage; exit 1;;
     esac
 done
 
 if [[ ! -f "$IMPORTANCE_CSV" ]]; then
-    log "ERROR: Importance CSV file not found: $IMPORTANCE_CSV"
-    log "Please run the main experiment first to generate importance scores."
+    log "ERROR: Importance CSV not found: $IMPORTANCE_CSV"
     exit 1
 fi
-
 if [[ ! -d "$EVAL_DATASET" ]]; then
-    log "ERROR: Evaluation dataset directory not found: $EVAL_DATASET"
+    log "ERROR: Evaluation dataset not found: $EVAL_DATASET"
     exit 1
 fi
-
 if [[ ! "$NUM_ROLES" =~ ^[1-7]$ ]]; then
-    log "ERROR: Number of roles must be between 1 and 7, got: $NUM_ROLES"
+    log "ERROR: Number of roles must be in [1..7], got: $NUM_ROLES"
     exit 1
 fi
 
@@ -121,354 +81,485 @@ log "Dataset: $EVAL_DATASET"
 log "Output: $OUTPUT_DIR"
 log "Roles per question: $NUM_ROLES"
 log "Max parallel jobs: $MAX_PARALLEL"
+log "Bootstrap reps (95% CI): $N_BOOT"
 
 mkdir -p "$OUTPUT_DIR"
 
-# Create Python script for role selection and evaluation
+# ---------------------------------------------------------------------
+# Python driver: selection + evaluation + metrics + bootstrap CIs
+# ---------------------------------------------------------------------
 cat > "$OUTPUT_DIR/evaluate_roles.py" << 'EOF'
 #!/usr/bin/env python3
-import sys
+import os, sys, re, json, ast, math, subprocess
 import pandas as pd
-import json
-import os
-import ast
 from pathlib import Path
+from collections import defaultdict
+from typing import Dict, List, Tuple
+import numpy as np
+import concurrent.futures
+from functools import partial
 
-def select_top_roles(importance_csv, num_roles=4):
-    """Select top N roles per test based on importance scores"""
+# ---------------------------
+# Subject → subcategory map
+# ---------------------------
+SUBCATEGORY = {
+    "abstract_algebra": ["math"],
+    "anatomy": ["health"],
+    "astronomy": ["physics"],
+    "business_ethics": ["business"],
+    "clinical_knowledge": ["health"],
+    "college_biology": ["biology"],
+    "college_chemistry": ["chemistry"],
+    "college_computer_science": ["computer science"],
+    "college_mathematics": ["math"],
+    "college_medicine": ["health"],
+    "college_physics": ["physics"],
+    "computer_security": ["computer science"],
+    "conceptual_physics": ["physics"],
+    "econometrics": ["economics"],
+    "electrical_engineering": ["engineering"],
+    "elementary_mathematics": ["math"],
+    "formal_logic": ["philosophy"],
+    "global_facts": ["other"],
+    "high_school_biology": ["biology"],
+    "high_school_chemistry": ["chemistry"],
+    "high_school_computer_science": ["computer science"],
+    "high_school_european_history": ["history"],
+    "high_school_geography": ["geography"],
+    "high_school_government_and_politics": ["politics"],
+    "high_school_macroeconomics": ["economics"],
+    "high_school_mathematics": ["math"],
+    "high_school_microeconomics": ["economics"],
+    "high_school_physics": ["physics"],
+    "high_school_psychology": ["psychology"],
+    "high_school_statistics": ["math"],
+    "high_school_us_history": ["history"],
+    "high_school_world_history": ["history"],
+    "human_aging": ["health"],
+    "human_sexuality": ["culture"],
+    "international_law": ["law"],
+    "jurisprudence": ["law"],
+    "logical_fallacies": ["philosophy"],
+    "machine_learning": ["computer science"],
+    "management": ["business"],
+    "marketing": ["business"],
+    "medical_genetics": ["health"],
+    "miscellaneous": ["other"],
+    "moral_disputes": ["philosophy"],
+    "moral_scenarios": ["philosophy"],
+    "nutrition": ["health"],
+    "philosophy": ["philosophy"],
+    "prehistory": ["history"],
+    "professional_accounting": ["other"],
+    "professional_law": ["law"],
+    "professional_medicine": ["health"],
+    "professional_psychology": ["psychology"],
+    "public_relations": ["politics"],
+    "security_studies": ["politics"],
+    "sociology": ["culture"],
+    "us_foreign_policy": ["politics"],
+    "virology": ["health"],
+    "world_religions": ["philosophy"],
+}
+
+CATEGORIES = {
+    "STEM": ["physics", "chemistry", "biology", "computer science", "math", "engineering"],
+    "humanities": ["history", "philosophy", "law"],
+    "social sciences": ["politics", "culture", "economics", "geography", "psychology"],
+    "other (business, health, misc.)": ["other", "business", "health"],
+}
+
+# ---------------------------
+# Helpers
+# ---------------------------
+def subject_key_from_name(name: str) -> str:
+    """
+    Convert file/test name like 'college_mathematics_test_73' → 'college_mathematics'
+    """
+    base = Path(name).stem
+    # strip any trailing _eval
+    base = re.sub(r'_eval$', '', base)
+    # remove suffix _test... or _val...
+    base = re.sub(r'_(test|val)(_\d+)?$', '', base)
+    return base
+
+def subcats_for_subject(subject: str) -> List[str]:
+    return SUBCATEGORY.get(subject, ["other"])
+
+def meta_for_subject(subject: str) -> str:
+    subcats = subcats_for_subject(subject)
+    # choose first subcat if multiple
+    sub = subcats[0] if subcats else "other"
+    for meta, subs in CATEGORIES.items():
+        if sub in subs:
+            return meta
+    return "other (business, health, misc.)"
+
+# ---------------------------
+# Role selection
+# ---------------------------
+def select_top_roles(importance_csv: str, num_roles: int = 4) -> Tuple[Dict[str, List[str]], List[str], pd.DataFrame]:
     df = pd.read_csv(importance_csv)
-    
-    # Role columns (excluding filename, acc, resp, q_cnt)
-    role_cols = [col for col in df.columns if col.endswith('_imp')]
-    role_names = [col.replace('_imp', '') for col in role_cols]
-    
-    selected_roles = {}
-    
+    role_cols = [c for c in df.columns if c.endswith('_imp')]
+    role_names = [c.replace('_imp', '') for c in role_cols]
+    selected = {}
     for _, row in df.iterrows():
-        filename = row['filename']
-        
-        # Get importance scores for this test
+        fname = row['filename']
         scores = [(role_names[i], row[role_cols[i]]) for i in range(len(role_cols))]
-        
-        # Sort by importance score (descending)
         scores.sort(key=lambda x: x[1], reverse=True)
-        
-        # Select top N roles
-        top_roles = [role for role, _ in scores[:num_roles]]
-        selected_roles[filename] = top_roles
-    
-    return selected_roles, role_names
+        top = [r for r, _ in scores[:num_roles]]
+        selected[fname] = top
+    return selected, role_names, df
 
-def run_evaluation(test_file, selected_roles, model, roles_list, output_dir):
-    """Run evaluation for a single test file"""
+# ---------------------------
+# Evaluation
+# ---------------------------
+def run_evaluation(test_file: str, selected_roles: Dict[str, List[str]], model: str, all_roles: List[str], out_dir: str) -> str:
     filename = Path(test_file).stem
 
-    # Handle mismatch between _test and _val suffixes
-    # Try exact match first, then try alternative suffix
-    lookup_filename = filename
+    # try to match importance key
+    lookup = filename
     if filename not in selected_roles:
-        # Try replacing _val with _test (in case importance CSV uses _val)
         if filename.endswith('_val'):
-            lookup_filename = filename.replace('_val', '_test')
-        # Try replacing _test with _val (in case importance CSV uses _val)
+            lookup = filename.replace('_val', '_test')
         elif filename.endswith('_test'):
-            lookup_filename = filename.replace('_test', '_val')
-        # Try appending _test if no suffix
+            lookup = filename.replace('_test', '_val')
         elif '_test' not in filename and '_val' not in filename:
-            lookup_filename = filename + '_test'
+            lookup = filename + '_test'
 
-    if lookup_filename not in selected_roles:
-        print(f"Warning: No importance data for {filename} (tried {lookup_filename}), skipping")
+    if lookup not in selected_roles:
+        print(f"Warning: No importance for {filename} (tried {lookup}); skipping")
         return None
 
-    # Get selected roles for this test (use lookup_filename which matched)
-    test_roles = selected_roles[lookup_filename]
+    roles = selected_roles[lookup]
+    test_roles_str = str(roles)
 
-    print(f"Matched {filename} → {lookup_filename} in importance data")
-    
-    # Create roles string for this specific test
-    test_roles_str = str(test_roles)
-    
-    # Output files
     exp_name = f"eval_{filename}"
+    roles_str_clean = test_roles_str.replace(' ', '').replace('[','').replace(']','').replace(',', '_').replace("'", '')
+    case_dir = os.path.join(out_dir, f"{exp_name}_{roles_str_clean}")
+    os.makedirs(case_dir, exist_ok=True)
 
-    # Use the same folder name that llmlp_listwise_mmlu.py creates
-    # Format: exp_name_Role1_Role2_Role3_Role4
-    roles_str_clean = test_roles_str.replace(' ', '').replace('[', '').replace(']', '').replace(',', '_').replace("'", '')
-    out_dir = os.path.join(output_dir, f"{exp_name}_{roles_str_clean}")
-    os.makedirs(out_dir, exist_ok=True)
-
-    log_file = os.path.join(out_dir, f"{filename}_eval.log")
-    result_file = os.path.join(out_dir, f"{filename}_eval.txt")
-    
-    # Check if already processed
+    result_file = os.path.join(case_dir, f"{filename}_eval.txt")
     if os.path.exists(result_file) and os.path.getsize(result_file) > 0:
         print(f"Skipping {filename} (already processed)")
         return result_file
-    
-    print(f"Evaluating {filename} with roles: {test_roles}")
 
-    # Run llmlp_listwise_mmlu.py as a subprocess
-    import subprocess
+    print(f"Evaluating {filename} with roles: {roles}")
+    # run llmlp_listwise_mmlu.py in OUTPUT_DIR so it writes there
+    parent = os.path.dirname(os.path.dirname(os.path.abspath(out_dir)))
+    llmlp = os.path.join(parent, 'llmlp_listwise_mmlu.py')
 
-    # Get the parent directory (where llmlp_listwise_mmlu.py is located)
-    # This script is in evaluation_results/, llmlp_listwise_mmlu.py is in parent dir
-    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    llmlp_script = os.path.join(script_dir, 'llmlp_listwise_mmlu.py')
+    expected_txt = os.path.join(case_dir, f"{exp_name}_{len(roles)}3.txt")
+    expected_json = os.path.join(case_dir, f"{exp_name}_{len(roles)}3.json")
 
-    # Expected output files created by llmlp_listwise_mmlu.py (in the same out_dir)
-    expected_txt = os.path.join(out_dir, f"{exp_name}_{len(test_roles)}3.txt")
-    expected_json = os.path.join(out_dir, f"{exp_name}_{len(test_roles)}3.json")
-
-    try:
-        # Build command
-        cmd = [
-            'python', llmlp_script,
-            test_file,           # QUERY_CSV
-            exp_name,            # EXP_NAME
-            model,               # MODEL
-            exp_name,            # DIR_NAME
-            test_roles_str       # ROLES
-        ]
-
-        # Run the command in the output directory so files are created there
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=output_dir)
-
-        if result.returncode != 0:
-            print(f"Error running evaluation for {filename}:")
-            print(result.stderr)
-            if result.stdout:
-                print("STDOUT:", result.stdout)
-            return None
-
-        # Check if files were created successfully
-        # expected_txt and expected_json already contain the full path
-        if os.path.exists(expected_txt):
-            # Rename the files to match our expected naming convention
-            import shutil
-            if expected_txt != result_file:
-                shutil.move(expected_txt, result_file)
-
-            # Also rename the JSON file if it exists
-            json_result_file = result_file.replace('.txt', '.json')
-            if os.path.exists(expected_json) and expected_json != json_result_file:
-                shutil.move(expected_json, json_result_file)
-
-            return result_file
-        else:
-            print(f"Warning: Expected output file not found: {expected_txt}")
-            print(f"STDOUT: {result.stdout}")
-            return None
-
-    except Exception as e:
-        print(f"Error evaluating {filename}: {e}")
-        import traceback
-        traceback.print_exc()
+    cmd = ['python', llmlp, test_file, exp_name, model, exp_name, test_roles_str]
+    res = subprocess.run(cmd, capture_output=True, text=True, cwd=out_dir)
+    if res.returncode != 0:
+        print(f"Error running evaluation for {filename}:\n{res.stderr}")
+        if res.stdout: print("STDOUT:", res.stdout)
         return None
 
-def calculate_metrics(result_files, importance_csv):
-    """Calculate evaluation metrics"""
-    df_importance = pd.read_csv(importance_csv)
-    
-    total_questions = 0
-    total_correct = 0
-    total_responses = 0
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-    
-    results_by_test = {}
-    
-    for result_file in result_files:
-        if not result_file or not os.path.exists(result_file):
-            continue
-            
-        filename = Path(result_file).stem.replace('_eval', '')
-        
-        try:
-            with open(result_file, 'r') as f:
-                lines = f.readlines()
-            
-            if len(lines) >= 6:
-                # Parse results (format: "[list] number" for lines 0-1, "[list]" for lines 2-3)
-                # Line 0: [True, False, ...] 0.5  (accuracies and average)
-                # Line 1: 24 12.0  (total responses and average)
-                # Line 2: [[importance matrix]]
-                # Line 3: [average importances]
-                # Line 4: prompt_tokens
-                # Line 5: completion_tokens
+    # move outputs to stable names
+    if os.path.exists(expected_txt):
+        import shutil
+        if expected_txt != result_file:
+            shutil.move(expected_txt, result_file)
+        json_out = result_file.replace('.txt', '.json')
+        if os.path.exists(expected_json) and expected_json != json_out:
+            shutil.move(expected_json, json_out)
+        return result_file
+    else:
+        print(f"Warning: expected file not found: {expected_txt}")
+        if res.stdout: print("STDOUT:", res.stdout)
+        return None
 
-                accs_parts = lines[0].strip().rsplit(' ', 1)
-                accs = ast.literal_eval(accs_parts[0])
-
-                resp_parts = lines[1].strip().split(' ', 1)
-                total_resp = int(resp_parts[0])
-
-                importances = ast.literal_eval(lines[2].strip())
-                avg_importances = ast.literal_eval(lines[3].strip())
-                prompt_tokens = int(lines[4].strip())
-                completion_tokens = int(lines[5].strip())
-                
-                # Calculate metrics for this test
-                test_questions = len(accs)
-                test_correct = sum(accs)
-                test_responses = total_resp
-                
-                total_questions += test_questions
-                total_correct += test_correct
-                total_responses += test_responses
-                total_prompt_tokens += prompt_tokens
-                total_completion_tokens += completion_tokens
-                
-                results_by_test[filename] = {
-                    'accuracy': test_correct / test_questions if test_questions > 0 else 0,
-                    'questions': test_questions,
-                    'correct': test_correct,
-                    'responses': test_responses,
-                    'avg_responses': test_responses / test_questions if test_questions > 0 else 0,
-                    'prompt_tokens': prompt_tokens,
-                    'completion_tokens': completion_tokens,
-                    'total_tokens': prompt_tokens + completion_tokens
-                }
-                
-        except Exception as e:
-            print(f"Error parsing {result_file}: {e}")
-            continue
-    
-    # Calculate overall metrics
-    overall_accuracy = total_correct / total_questions if total_questions > 0 else 0
-    avg_responses_per_question = total_responses / total_questions if total_questions > 0 else 0
-    
+# ---------------------------
+# Parse evaluation outputs
+# ---------------------------
+def parse_result_file(result_file: str):
+    """
+    Expected format (6+ lines):
+      0: [True, False, ...] 0.5
+      1: <total_responses> <avg_responses>
+      2: [[...]]                (importance matrix)
+      3: [...]                  (avg importances)
+      4: <prompt_tokens>
+      5: <completion_tokens>
+    """
+    with open(result_file, 'r') as f:
+        lines = f.readlines()
+    accs_parts = lines[0].strip().rsplit(' ', 1)
+    accs = ast.literal_eval(accs_parts[0])
+    resp_parts = lines[1].strip().split(' ', 1)
+    total_resp = int(resp_parts[0])
+    prompt_tokens = int(lines[4].strip())
+    completion_tokens = int(lines[5].strip())
+    q = len(accs)
+    c = sum(1 for a in accs if a)
     return {
-        'overall': {
-            'accuracy': overall_accuracy,
-            'total_questions': total_questions,
-            'total_correct': total_correct,
-            'total_responses': total_responses,
-            'avg_responses_per_question': avg_responses_per_question,
-            'total_prompt_tokens': total_prompt_tokens,
-            'total_completion_tokens': total_completion_tokens,
-            'total_tokens': total_prompt_tokens + total_completion_tokens
-        },
-        'by_test': results_by_test
+        'questions': q,
+        'correct': c,
+        'responses': total_resp,
+        'prompt_tokens': prompt_tokens,
+        'completion_tokens': completion_tokens
     }
 
-def main():
-    if len(sys.argv) not in [6, 7]:
-        print("Usage: evaluate_roles.py <importance_csv> <dataset_dir> <model> <num_roles> <output_dir> [max_parallel]")
-        sys.exit(1)
+def collect_post_metrics(result_files: List[str]) -> pd.DataFrame:
+    rows = []
+    for rf in result_files:
+        if not rf or not os.path.exists(rf): continue
+        test_name = Path(rf).stem.replace('_eval', '')
+        m = parse_result_file(rf)
+        subj = subject_key_from_name(test_name)
+        meta = meta_for_subject(subj)
+        rows.append({
+            'test_name': test_name,
+            'subject': subj,
+            'meta': meta,
+            **m
+        })
+    return pd.DataFrame(rows)
 
+# ---------------------------
+# Pre-selection metrics (7 roles)
+# ---------------------------
+def collect_pre_metrics(importance_csv: str) -> pd.DataFrame:
+    df = pd.read_csv(importance_csv)
+    rows = []
+    # expected cols: filename, acc, resp, q_cnt (tokens may or may not exist)
+    has_tok_in = 'prompt_tokens' in df.columns
+    has_tok_out = 'completion_tokens' in df.columns
+    for _, r in df.iterrows():
+        fname = r['filename']
+        subj = subject_key_from_name(fname)
+        meta = meta_for_subject(subj)
+        q_cnt = int(r['q_cnt'])
+        # 'acc' is per-question average accuracy; keep fractional * q_cnt for aggregation
+        correct_float = float(r['acc']) * q_cnt
+        responses = int(r['resp'])
+        row = {
+            'test_name': Path(fname).stem,   # keep original stem
+            'subject': subj,
+            'meta': meta,
+            'questions': q_cnt,
+            'correct_float': correct_float,  # keep float; accuracy sums stay exact
+            'responses': responses
+        }
+        if has_tok_in:  row['prompt_tokens'] = int(r['prompt_tokens'])
+        if has_tok_out: row['completion_tokens'] = int(r['completion_tokens'])
+        rows.append(row)
+    d = pd.DataFrame(rows)
+    # standardize for downstream
+    if 'correct' not in d.columns:
+        # we keep float counts (no rounding) for accuracy aggregation
+        d['correct'] = d['correct_float']
+    if 'prompt_tokens' not in d.columns:
+        d['prompt_tokens'] = np.nan
+    if 'completion_tokens' not in d.columns:
+        d['completion_tokens'] = np.nan
+    return d[['test_name','subject','meta','questions','correct','responses','prompt_tokens','completion_tokens']]
+
+# ---------------------------
+# Bootstrap & summaries
+# ---------------------------
+def bootstrap_ci(df: pd.DataFrame, n_boot: int = 1000, seed: int = 0, scale_tokens_by: float = None):
+    """
+    Bootstrap across tests (blocks bootstrap).
+    If scale_tokens_by is provided (e.g., R), tokens are multiplied by this constant
+    in each replicate (used to estimate pre tokens from post tokens).
+    Returns dict of metric -> (point, [lo, hi]).
+    """
+    if df.empty:
+        return {}
+
+    rng = np.random.default_rng(seed)
+    n = len(df)
+
+    # point estimates (no bootstrap)
+    q_sum = df['questions'].sum()
+    acc_point = float(df['correct'].sum()) / q_sum if q_sum > 0 else float('nan')
+    api_point = df['responses'].sum()
+    tin_point = df['prompt_tokens'].sum(skipna=True)
+    tout_point = df['completion_tokens'].sum(skipna=True)
+
+    if scale_tokens_by is not None:
+        tin_point = float(scale_tokens_by) * tin_point
+        tout_point = float(scale_tokens_by) * tout_point
+
+    acc_samps, api_samps, tin_samps, tout_samps = [], [], [], []
+    have_tin = df['prompt_tokens'].notna().any()
+    have_tout = df['completion_tokens'].notna().any()
+
+    for _ in range(n_boot):
+        idx = rng.integers(low=0, high=n, size=n)
+        s = df.iloc[idx]
+        q = s['questions'].sum()
+        acc = float(s['correct'].sum()) / q if q > 0 else float('nan')
+        api = s['responses'].sum()
+        tin = s['prompt_tokens'].sum(skipna=True) if have_tin else np.nan
+        tout = s['completion_tokens'].sum(skipna=True) if have_tout else np.nan
+        if scale_tokens_by is not None:
+            tin = (float(scale_tokens_by) * tin) if not np.isnan(tin) else np.nan
+            tout = (float(scale_tokens_by) * tout) if not np.isnan(tout) else np.nan
+
+        acc_samps.append(acc)
+        api_samps.append(api)
+        tin_samps.append(tin)
+        tout_samps.append(tout)
+
+    def pct_ci(arr):
+        arr = np.array(arr, dtype=float)
+        lo, hi = np.nanpercentile(arr, [2.5, 97.5])
+        return [float(lo), float(hi)]
+
+    out = {
+        'accuracy': {'point': float(acc_point), 'ci95': pct_ci(acc_samps)},
+        'api_calls': {'point': int(api_point), 'ci95': [int(np.nanpercentile(api_samps, 2.5)), int(np.nanpercentile(api_samps, 97.5))]},
+    }
+
+    if have_tin:
+        out['tokens_in'] = {'point': float(tin_point), 'ci95': pct_ci(tin_samps)}
+    else:
+        out['tokens_in'] = {'point': float('nan'), 'ci95': [float('nan'), float('nan')]}
+    if have_tout:
+        out['tokens_out'] = {'point': float(tout_point), 'ci95': pct_ci(tout_samps)}
+    else:
+        out['tokens_out'] = {'point': float('nan'), 'ci95': [float('nan'), float('nan')]}
+
+    return out
+
+def print_block(title: str, res: dict, mark_est_tokens: bool = False):
+    print(f"\n{title}")
+    print("-" * len(title))
+    acc = res['accuracy']; api = res['api_calls']
+    print(f"Accuracy             : {acc['point']:.4f}  [95% CI {acc['ci95'][0]:.4f}, {acc['ci95'][1]:.4f}]")
+    print(f"API calls            : {api['point']}  [95% CI {api['ci95'][0]}, {api['ci95'][1]}]")
+
+    ti = res.get('tokens_in', None)
+    to = res.get('tokens_out', None)
+    if ti and not (math.isnan(ti['point']) or math.isnan(ti['ci95'][0])):
+        est_tag = " (est.)" if mark_est_tokens else ""
+        print(f"Tokens in            : {ti['point']:.0f}{est_tag}  [95% CI {ti['ci95'][0]:.0f}, {ti['ci95'][1]:.0f}]")
+    else:
+        print("Tokens in            : N/A")
+    if to and not (math.isnan(to['point']) or math.isnan(to['ci95'][0])):
+        est_tag = " (est.)" if mark_est_tokens else ""
+        print(f"Tokens out           : {to['point']:.0f}{est_tag}  [95% CI {to['ci95'][0]:.0f}, {to['ci95'][1]:.0f}]")
+    else:
+        print("Tokens out           : N/A")
+
+def main():
+    if len(sys.argv) not in (7, 8):
+        print("Usage: evaluate_roles.py <importance_csv> <dataset_dir> <model> <num_roles> <output_dir> <max_parallel> <n_boot>")
+        sys.exit(1)
     importance_csv = sys.argv[1]
-    dataset_dir = sys.argv[2]
-    model = sys.argv[3]
-    num_roles = int(sys.argv[4])
-    output_dir = sys.argv[5]
-    max_parallel = int(sys.argv[6]) if len(sys.argv) > 6 else 4
-    
+    dataset_dir   = sys.argv[2]
+    model         = sys.argv[3]
+    num_roles     = int(sys.argv[4])
+    output_dir    = sys.argv[5]
+    max_parallel  = int(sys.argv[6])
+    n_boot        = int(sys.argv[7]) if len(sys.argv) == 8 else 1000
+
     print(f"Loading importance data from: {importance_csv}")
-    selected_roles, all_roles = select_top_roles(importance_csv, num_roles)
-    
+    selected_roles, all_roles, df_imp = select_top_roles(importance_csv, num_roles)
     print(f"Found importance data for {len(selected_roles)} tests")
     print(f"Selected {num_roles} roles per test from: {all_roles}")
-    
-    # Find test files
-    test_files = []
-    for file in os.listdir(dataset_dir):
-        if file.endswith('.csv'):
-            test_files.append(os.path.join(dataset_dir, file))
-    
-    print(f"Found {len(test_files)} test files")
-    print(f"Running evaluations with max {max_parallel} parallel jobs")
 
-    # Filter test files to only those with importance data
-    files_to_process = []
-    for test_file in test_files:
-        filename = Path(test_file).stem
+    # gather candidate csv files
+    tests = [os.path.join(dataset_dir, f) for f in os.listdir(dataset_dir) if f.endswith('.csv')]
+    print(f"Found {len(tests)} test files")
+    # filter to only those we have importance for (with suffix reconciliation)
+    to_proc = []
+    for tf in tests:
+        fn = Path(tf).stem
+        lookup = fn
+        if fn not in selected_roles:
+            if fn.endswith('_val'):
+                lookup = fn.replace('_val', '_test')
+            elif fn.endswith('_test'):
+                lookup = fn.replace('_test', '_val')
+            elif '_test' not in fn and '_val' not in fn:
+                lookup = fn + '_test'
+        if lookup in selected_roles:
+            to_proc.append(tf)
+    print(f"Processing {len(to_proc)} test files with importance data")
 
-        # Check if filename matches (with or without _test/_val conversion)
-        lookup_filename = filename
-        if filename not in selected_roles:
-            # Try replacing _val with _test (in case importance CSV uses _val)
-            if filename.endswith('_val'):
-                lookup_filename = filename.replace('_val', '_test')
-            # Try replacing _test with _val (in case importance CSV uses _val)
-            elif filename.endswith('_test'):
-                lookup_filename = filename.replace('_test', '_val')
-            # Try appending _test if no suffix
-            elif '_test' not in filename and '_val' not in filename:
-                lookup_filename = filename + '_test'
-
-        if lookup_filename in selected_roles:
-            files_to_process.append(test_file)
-
-    print(f"Processing {len(files_to_process)} test files with importance data")
-
-    # Run evaluations in parallel
-    import concurrent.futures
-    from functools import partial
-
+    # Run reduced-role evals in parallel
     result_files = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel) as executor:
-        # Create partial function with fixed arguments
-        eval_func = partial(run_evaluation,
-                           selected_roles=selected_roles,
-                           model=model,
-                           roles_list=all_roles,
-                           output_dir=output_dir)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel) as ex:
+        fn = partial(run_evaluation, selected_roles=selected_roles, model=model, all_roles=all_roles, out_dir=output_dir)
+        fut = {ex.submit(fn, tf): tf for tf in to_proc}
+        for f in concurrent.futures.as_completed(fut):
+            rf = f.result()
+            if rf: result_files.append(rf)
 
-        # Submit all jobs and collect futures
-        future_to_file = {executor.submit(eval_func, test_file): test_file
-                         for test_file in files_to_process}
-
-        # Process results as they complete
-        for future in concurrent.futures.as_completed(future_to_file):
-            test_file = future_to_file[future]
-            try:
-                result_file = future.result()
-                if result_file:
-                    result_files.append(result_file)
-            except Exception as e:
-                print(f"Error processing {test_file}: {e}")
-                import traceback
-                traceback.print_exc()
-    
-    # Calculate and report metrics
+    # Collect metrics
     print("\n" + "="*60)
     print("EVALUATION RESULTS")
     print("="*60)
-    
-    metrics = calculate_metrics(result_files, importance_csv)
-    
-    # Overall metrics
-    overall = metrics['overall']
-    print(f"\nOVERALL METRICS:")
-    print(f"  Accuracy: {overall['accuracy']:.4f} ({overall['total_correct']}/{overall['total_questions']})")
-    print(f"  Average responses per question: {overall['avg_responses_per_question']:.2f}")
-    print(f"  Total tokens used: {overall['total_tokens']:,}")
-    print(f"  Prompt tokens: {overall['total_prompt_tokens']:,}")
-    print(f"  Completion tokens: {overall['total_completion_tokens']:,}")
-    
-    # Per-test metrics
-    print(f"\nPER-TEST METRICS:")
-    print(f"{'Test Name':<30} {'Accuracy':<10} {'Questions':<10} {'Avg Resp':<10} {'Tokens':<10}")
-    print("-" * 80)
-    
-    for test_name, test_metrics in metrics['by_test'].items():
-        print(f"{test_name:<30} {test_metrics['accuracy']:<10.4f} {test_metrics['questions']:<10} "
-              f"{test_metrics['avg_responses']:<10.2f} {test_metrics['total_tokens']:<10,}")
-    
-    # Save detailed results
-    results_file = os.path.join(output_dir, f"evaluation_results_{num_roles}roles.json")
-    with open(results_file, 'w') as f:
-        json.dump(metrics, f, indent=2)
-    
-    print(f"\nDetailed results saved to: {results_file}")
-    
-    # Save role selection info
-    roles_file = os.path.join(output_dir, f"selected_roles_{num_roles}roles.json")
-    with open(roles_file, 'w') as f:
-        json.dump(selected_roles, f, indent=2)
-    
-    print(f"Role selection info saved to: {roles_file}")
+
+    post_df = collect_post_metrics(result_files)
+    pre_df  = collect_pre_metrics(importance_csv)
+
+    # Align sets by subject where needed
+    # (We compute global response ratio using all available rows.)
+    total_resp_pre  = pre_df['responses'].sum()
+    total_resp_post = post_df['responses'].sum()
+    R = (float(total_resp_pre) / float(total_resp_post)) if total_resp_post > 0 else float('nan')
+
+    # Overall summaries
+    post_overall = bootstrap_ci(post_df, n_boot=n_boot, seed=0, scale_tokens_by=None)
+    # If pre has tokens recorded, use them; if not, estimate via R from post tokens
+    pre_has_tok = pre_df['prompt_tokens'].notna().any() and pre_df['completion_tokens'].notna().any()
+    pre_overall = bootstrap_ci(pre_df, n_boot=n_boot, seed=1,
+                               scale_tokens_by=None if pre_has_tok else R)
+
+    print_block("OVERALL (Post-selection / reduced roles)", post_overall, mark_est_tokens=False)
+    print_block("OVERALL (Pre-selection / 7 roles)", pre_overall, mark_est_tokens=(not pre_has_tok))
+
+    # Per meta-category
+    categories = list(CATEGORIES.keys())
+    summary = {
+        'notes': {},
+        'overall': {'post': post_overall, 'pre': pre_overall},
+        'by_meta': {}
+    }
+
+    for meta in categories:
+        post_cat = post_df[post_df['meta'] == meta]
+        pre_cat  = pre_df[pre_df['meta'] == meta]
+        # For token estimation at category level we keep using global R for stability.
+        post_cat_res = bootstrap_ci(post_cat, n_boot=n_boot, seed=hash(meta) % (2**32))
+        pre_cat_has_tok = pre_cat['prompt_tokens'].notna().any() and pre_cat['completion_tokens'].notna().any()
+        pre_cat_res = bootstrap_ci(pre_cat, n_boot=n_boot, seed=(hash(meta)+1) % (2**32),
+                                   scale_tokens_by=None if pre_cat_has_tok else R)
+
+        print_block(f"{meta} — Post-selection", post_cat_res, mark_est_tokens=False)
+        print_block(f"{meta} — Pre-selection", pre_cat_res, mark_est_tokens=(not pre_cat_has_tok))
+
+        summary['by_meta'][meta] = {
+            'post': post_cat_res,
+            'pre': pre_cat_res
+        }
+
+    # Print notes clearly
+    print("\nNOTES")
+    print("-----")
+    print("* API calls are computed as the total number of model responses (sum over all questions).")
+    if not pre_has_tok:
+        print(f"* Pre-selection tokens were NOT logged. We therefore estimate pre tokens as:")
+        print(f"    tokens_pre ≈ R × tokens_post, where R = total_responses_pre / total_responses_post = {R:.4f}")
+        print(f"  Estimated values are marked with '(est.)' above.")
+        summary['notes']['pre_tokens_estimated'] = True
+        summary['notes']['response_ratio_R'] = R
+    else:
+        summary['notes']['pre_tokens_estimated'] = False
+
+    # Save JSON
+    out_json = os.path.join(output_dir, f"metrics_summary_{num_roles}roles.json")
+    with open(out_json, 'w') as f:
+        json.dump(summary, f, indent=2)
+    print(f"\nDetailed JSON saved to: {out_json}")
 
 if __name__ == "__main__":
     main()
@@ -476,94 +567,18 @@ EOF
 
 chmod +x "$OUTPUT_DIR/evaluate_roles.py"
 
-# ------------------------------------------------------------
-# Run evaluation
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Run evaluation + metrics (with bootstrap)
+# ---------------------------------------------------------------------
 log "Running evaluation with $NUM_ROLES roles per question..."
-
 python "$OUTPUT_DIR/evaluate_roles.py" \
     "$IMPORTANCE_CSV" \
     "$EVAL_DATASET" \
     "$MODEL" \
     "$NUM_ROLES" \
     "$OUTPUT_DIR" \
-    "$MAX_PARALLEL"
+    "$MAX_PARALLEL" \
+    "$N_BOOT"
 
 log "Evaluation completed!"
 log "Results saved in: $OUTPUT_DIR"
-
-if [[ -f "$IMPORTANCE_CSV" ]]; then
-    log "Generating comparison report..."
-    
-    cat > "$OUTPUT_DIR/compare_with_full.py" << 'EOF'
-#!/usr/bin/env python3
-import sys
-import pandas as pd
-import json
-
-def compare_results(importance_csv, eval_results_file):
-    """Compare reduced-role results with full 7-role results"""
-    
-    # Load importance data (represents full 7-role results)
-    df_importance = pd.read_csv(importance_csv)
-    
-    # Load evaluation results
-    with open(eval_results_file, 'r') as f:
-        eval_results = json.load(f)
-    
-    # Calculate full 7-role metrics
-    total_questions_full = df_importance['q_cnt'].sum()
-    total_correct_full = sum(df_importance['acc'] * df_importance['q_cnt'])
-    total_responses_full = df_importance['resp'].sum()
-    
-    accuracy_full = total_correct_full / total_questions_full if total_questions_full > 0 else 0
-    avg_responses_full = total_responses_full / total_questions_full if total_questions_full > 0 else 0
-    
-    # Get reduced-role metrics
-    accuracy_reduced = eval_results['overall']['accuracy']
-    avg_responses_reduced = eval_results['overall']['avg_responses_per_question']
-    
-    print("="*60)
-    print("COMPARISON: Full 7-Role vs Reduced-Role Performance")
-    print("="*60)
-    print(f"{'Metric':<25} {'Full (7 roles)':<15} {'Reduced':<15} {'Difference':<15}")
-    print("-" * 70)
-    print(f"{'Accuracy':<25} {accuracy_full:<15.4f} {accuracy_reduced:<15.4f} {accuracy_reduced-accuracy_full:<15.4f}")
-    print(f"{'Avg Responses':<25} {avg_responses_full:<15.2f} {avg_responses_reduced:<15.2f} {avg_responses_reduced-avg_responses_full:<15.2f}")
-    
-    # Calculate efficiency metrics
-    efficiency_gain = (avg_responses_full - avg_responses_reduced) / avg_responses_full * 100
-    accuracy_change = (accuracy_reduced - accuracy_full) / accuracy_full * 100
-    
-    print(f"\nEFFICIENCY ANALYSIS:")
-    print(f"  Response reduction: {efficiency_gain:.1f}%")
-    print(f"  Accuracy change: {accuracy_change:+.1f}%")
-    
-    if efficiency_gain > 0 and accuracy_change >= -5:
-        print(f"  ✓ Efficient: Reduced responses by {efficiency_gain:.1f}% with minimal accuracy loss")
-    elif accuracy_change > 0:
-        print(f"  ✓ Improved: Better accuracy with fewer responses")
-    else:
-        print(f"  ⚠ Trade-off: Reduced responses but accuracy decreased by {abs(accuracy_change):.1f}%")
-
-if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: compare_with_full.py <importance_csv> <eval_results_json>")
-        sys.exit(1)
-    
-    compare_results(sys.argv[1], sys.argv[2])
-EOF
-
-    chmod +x "$OUTPUT_DIR/compare_with_full.py"
-    
-    # Find the results file
-    results_file=$(find "$OUTPUT_DIR" -name "evaluation_results_${NUM_ROLES}roles.json" | head -1)
-    
-    if [[ -n "$results_file" ]]; then
-        python "$OUTPUT_DIR/compare_with_full.py" "$IMPORTANCE_CSV" "$results_file"
-    else
-        log "Warning: Could not find evaluation results file for comparison"
-    fi
-fi
-
-log "Evaluation script completed successfully!"
