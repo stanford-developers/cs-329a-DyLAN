@@ -30,6 +30,12 @@ def main():
     assert len(ROLES) > 0
     os.makedirs(DIR_NAME, exist_ok=True)
 
+    #Print configuration status
+    if os.getenv("RATIONALE", "0") == "1":
+        print("=" * 10)
+        print("RATIONALE MODE ENABLED: Agents will provide rationales for their scores.")
+        print("=" * 10) 
+
     llmlp = LLMLP(MODEL, len(ROLES), ROLES, 3, ACTIVATION, TYPE, MODEL)
     qa_pairs = get_mmlu_qa_pairs(QUERY_CSV)
 
