@@ -732,3 +732,43 @@ python code/MMLU/summarize_run_with_categories.py \
   --price-in-per-m 0.05 \
   --price-out-per-m 0.20
 ```
+
+```bash
+# From repo root
+cd code/MMLU
+
+# Default: Together OSS 20B, evaluation split, 1,000 bootstrap reps
+bash exp_mmlu_single_llm.sh
+
+# Custom model / more parallelism / more bootstrap reps
+bash exp_mmlu_single_llm.sh \
+  --model "gpt-4o-mini" \
+  --dataset "../../data/MMLU/evaluation" \
+  --max-parallel 6 \
+  --n-boot 2000
+
+# Control decoding
+TEMP=0.0 TOP_P=1.0 bash exp_mmlu_single_llm.sh
+```
+
+### 14. Run a **two-agent-debate** baseline (+ bootstrap CIs)
+
+```bash
+# From repo root
+cd code/MMLU
+
+# Two‑agent debate baseline (≈DyLAN call budget; 6 calls/q)
+bash exp_mmlu_two_agent_debate.sh
+
+# Custom model / more rounds / more parallelism / more bootstrap reps
+bash exp_mmlu_two_agent_debate.sh \
+  --model "gpt-4o-mini" \
+  --dataset "../../data/MMLU/evaluation" \
+  --rounds 3 \
+  --max-parallel 6 \
+  --n-boot 2000
+
+# Compare against a prior 7‑role run (pre-selection)
+bash exp_mmlu_two_agent_debate.sh \
+  --importance-csv "runs/baseline_20251101-1402/importance_1to7_baseline.csv"
+```
