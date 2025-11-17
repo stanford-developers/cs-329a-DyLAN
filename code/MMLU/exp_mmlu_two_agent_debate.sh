@@ -2,11 +2,12 @@
 set -euo pipefail
 
 # Two‑Agent Debate MMLU Evaluation + CI
-# - Proposer & Critic
-# - Schedule (default --rounds 3): P → C → P → C → P → C (6 calls/q)
-#   Final answer = last Proposer letter (the 5th message).
+# - Roles: Proposer & Critic
+# - ROUNDS means the number of (Critic → Proposer) pairs after the initial proposer.
+#   With --rounds 3 the schedule is: P0 → (C1,P1) → (C2,P2) → (C3,P3)   [7 calls/q]
+#   Final answer = last Proposer letter (P_last). We end on P (no trailing Critic).
 # - Reports: accuracy, API calls, tokens‑in/out with 95% bootstrap CIs
-# - Same robust CSV loader as single‑LLM script
+# - Robust CSV loader (headered or headerless)
 # - Optional pre(7‑role) comparison via --importance-csv
 
 MODEL="${MODEL:-openai/gpt-oss-20b}"
@@ -17,7 +18,7 @@ MAX_PARALLEL="${MAX_PARALLEL:-4}"
 N_BOOT="${N_BOOT:-1000}"
 TEMPERATURE="${TEMPERATURE:-0.0}"
 TOP_P="${TOP_P:-1.0}"
-ROUNDS="${ROUNDS:-3}"                # number of Critic passes (P,C,P,C,... end on C); final answer = last P
+ROUNDS="${ROUNDS:-3}"                # number of (Critic → Proposer) pairs after initial Proposer
 IMPORTANCE_CSV="${IMPORTANCE_CSV:-}" # optional
 
 usage() {
@@ -35,7 +36,7 @@ OPTIONS:
   --n-boot NUM                   Bootstrap replicates for CI (default: ${N_BOOT})
   -t, --temperature FLOAT        Temperature (default: ${TEMPERATURE})
   --top-p FLOAT                  top_p (default: ${TOP_P})
-  -r, --rounds NUM               Number of Critic passes (default: ${ROUNDS})
+  -r, --rounds NUM               Number of (Critic→Proposer) pairs (default: ${ROUNDS})
   -i, --importance-csv FILE      (optional) importance_1to7.csv for 7-role comparison
   -h, --help                     Show help
 
@@ -80,7 +81,7 @@ log "Output: $OUTPUT_DIR"
 log "Max parallel: $MAX_PARALLEL"
 log "Bootstrap reps: $N_BOOT"
 log "Temp: $TEMPERATURE  |  top-p: $TOP_P"
-log "Critic passes (rounds): $ROUNDS"
+log "Rounds (C→P pairs): $ROUNDS  |  Expected calls/q (no early stop): $((1 + 2 * ROUNDS))"
 [[ -n "$IMPORTANCE_CSV" ]] && log "Pre (7‑role) comparison CSV: $IMPORTANCE_CSV"
 
 # ------------------------------------------------------------
@@ -88,7 +89,7 @@ log "Critic passes (rounds): $ROUNDS"
 # ------------------------------------------------------------
 cat > "$OUTPUT_DIR/two_agent_debate_eval.py" << 'PY'
 #!/usr/bin/env python3
-import os, sys, re, json, math, time, traceback
+import os, sys, re, json, math, time
 from pathlib import Path
 from typing import Dict, List, Tuple
 import concurrent.futures
@@ -231,14 +232,9 @@ def _choice_col(letter: str, cols_lower_map: Dict[str,str]):
     return None
 
 def _read_csv_any(path: str) -> pd.DataFrame:
-    """
-    Try reading with a header and only accept it if we can actually
-    resolve question + answer + >=3 choices. Otherwise, re-read as headerless.
-    """
     try:
         df_try = pd.read_csv(path, dtype=str, keep_default_na=False, engine="python")
         cols_lower_map = {c.lower().strip(): c for c in df_try.columns}
-
         qcol_try = _pick_col(cols_lower_map, "question",
                              contains=["question","prompt","stem","query","problem","question_text"])
         anscol_try = _pick_col(cols_lower_map, "answer","target","label","correct","correct_answer","answer_key",
@@ -279,8 +275,8 @@ def _detect_indexing_numeric(vals: pd.Series):
         s = pd.to_numeric(vals, errors="coerce").dropna()
         if s.empty: return None
         mn, mx = int(s.min()), int(s.max())
-        if mn == 0 and mx <= 3: return "zero"
-        if mn >= 1 and mx <= 4: return "one"
+        if mn == 0 and mx <= 3: return "zero"  # 0..3 -> A..D
+        if mn >= 1 and mx <= 4: return "one"   # 1..4 -> A..D
     except Exception:
         pass
     return None
@@ -321,7 +317,7 @@ def load_mmlu_csv(path: str) -> List[dict]:
             if m:
                 ans = m.group(1).upper()
             else:
-                # numeric?
+                # numeric indexing?
                 try:
                     n = int(float(raw_ans))
                     if indexing == "zero" and 0 <= n <= 3:   ans = "ABCD"[n]
@@ -345,14 +341,27 @@ def load_mmlu_csv(path: str) -> List[dict]:
 LETTER_RE = re.compile(r'\b([A-D])\b', re.IGNORECASE)
 
 def extract_choice(text: str) -> str:
+    """Parse a choice letter robustly."""
     if not text:
         return ""
-    # Prefer a single-letter line at the top if present:
-    first_line = text.strip().splitlines()[0].strip()
-    m = re.match(r'^\s*([A-D])\s*$', first_line, flags=re.I)
-    if m:
-        return m.group(1).upper()
-    m = LETTER_RE.search(text.strip())
+    s = text.strip()
+    # 1) first non-empty line as a single letter
+    for line in (ln.strip() for ln in s.splitlines() if ln.strip()):
+        m = re.match(r'^([A-D])$', line, flags=re.I)
+        if m:
+            return m.group(1).upper()
+        break  # only check the first non-empty line
+
+    # 2) common 'Answer: C' / 'Final: (C)'
+    m = re.search(r'\b(?:answer|final)\s*[:\-]?\s*\(?\s*([ABCD])\s*\)?', s, flags=re.I)
+    if m: return m.group(1).upper()
+
+    # 3) a bare (C) or [C]
+    m = re.search(r'[\(\[\{]\s*([ABCD])\s*[\)\]\}]', s, flags=re.I)
+    if m: return m.group(1).upper()
+
+    # 4) fallback: first standalone letter
+    m = LETTER_RE.search(s)
     return m.group(1).upper() if m else ""
 
 def chat(model: str, messages: List[Dict], max_tokens: int = 256):
@@ -368,7 +377,9 @@ def chat(model: str, messages: List[Dict], max_tokens: int = 256):
     return content, ptok, ctok
 
 def proposer_initial(model: str, q: dict) -> Tuple[str, str, int, int]:
-    sys_msg = "You are the Proposer. Solve the multiple-choice question. On the FIRST line, output only the letter A/B/C/D. Then give a brief reason (1–2 sentences)."
+    sys_msg = ("You are the Proposer. Solve the multiple-choice question. "
+               "On the FIRST line, output only the letter A/B/C/D. "
+               "Then give a brief reason (1–2 sentences).")
     user = f"""Question:
 {q['question']}
 
@@ -377,7 +388,8 @@ A. {q['A']}
 B. {q['B']}
 C. {q['C']}
 D. {q['D']}"""
-    content, p, c = chat(model, [{"role":"system","content":sys_msg},{ "role":"user","content":user }], max_tokens=160)
+    content, p, c = chat(model, [{"role":"system","content":sys_msg},
+                                  {"role":"user","content":user}], max_tokens=160)
     letter = extract_choice(content)
     return letter, content, p, c
 
@@ -396,7 +408,8 @@ D. {q['D']}
 
 Proposer's last answer:
 {proposer_content}"""
-    content, p, c = chat(model, [{"role":"system","content":sys_msg},{ "role":"user","content":user }], max_tokens=160)
+    content, p, c = chat(model, [{"role":"system","content":sys_msg},
+                                  {"role":"user","content":user}], max_tokens=160)
     letter = extract_choice(content)
     return letter, content, p, c
 
@@ -418,35 +431,49 @@ Your previous answer:
 
 Critic's feedback:
 {critic_content}"""
-    content, p, c = chat(model, [{"role":"system","content":sys_msg},{ "role":"user","content":user }], max_tokens=160)
+    content, p, c = chat(model, [{"role":"system","content":sys_msg},
+                                  {"role":"user","content":user}], max_tokens=160)
     letter = extract_choice(content)
     return letter, content, p, c
 
 def evaluate_file(csv_path: str, model: str, rounds: int, retries: int = 3, backoff: float = 1.0) -> dict:
+    """
+    Schedule:
+      P0  (initial)
+      for i in 1..rounds:
+         Ci  (critic over P_{i-1})
+         Pi  (proposer revision over Ci)
+      Final answer = P_rounds letter.
+    Calls per question (no early stop): 1 + 2*rounds
+    """
     data = load_mmlu_csv(csv_path)
     qn = len(data)
     calls = ptok = ctok = correct = 0
 
     for row in data:
-        # P (initial)
+        # Initial Proposer
         last_p_letter = ""
         last_p_content = ""
+        init_p_letter = ""
+        init_p_content = ""
         last_err = None
+
         for attempt in range(retries):
             try:
                 lp, pc, p_p, p_c = proposer_initial(model, row)
                 calls += 1; ptok += p_p; ctok += p_c
+                init_p_letter, init_p_content = lp, pc
                 last_p_letter, last_p_content = lp, pc
                 break
             except Exception as e:
                 last_err = e; time.sleep(backoff * (2**attempt))
         else:
-            # skip this question if proposer never responded
+            # Skip this question if proposer never responded
             continue
 
-        # rounds of: Critic (always) + Proposer revise (except after last critic)
+        # R rounds of (Critic → Proposer)
         for r in range(rounds):
-            # Critic
+            # Critic over last proposer
             for attempt in range(retries):
                 try:
                     cl, cc, c_p, c_c = critic_feedback(model, row, last_p_content)
@@ -456,24 +483,23 @@ def evaluate_file(csv_path: str, model: str, rounds: int, retries: int = 3, back
                 except Exception as e:
                     last_err = e; time.sleep(backoff * (2**attempt))
             else:
-                # if critic fails, stop early for this question
+                break  # stop this question if critic repeatedly fails
+
+            # Proposer revision
+            for attempt in range(retries):
+                try:
+                    lp, pc, p_p, p_c = proposer_revise(model, row, critic_content, last_p_content)
+                    calls += 1; ptok += p_p; ctok += p_c
+                    last_p_letter, last_p_content = lp, pc
+                    break
+                except Exception as e:
+                    last_err = e; time.sleep(backoff * (2**attempt))
+            else:
                 break
 
-            # Proposer revision (skip after last critic to keep call budget = 2*rounds)
-            if r < rounds - 1:
-                for attempt in range(retries):
-                    try:
-                        lp, pc, p_p, p_c = proposer_revise(model, row, critic_content, last_p_content)
-                        calls += 1; ptok += p_p; ctok += p_c
-                        last_p_letter, last_p_content = lp, pc
-                        break
-                    except Exception as e:
-                        last_err = e; time.sleep(backoff * (2**attempt))
-                else:
-                    break
-
-        # Final answer = last proposer letter (from initial or last revision)
-        if row["answer"] and last_p_letter == row["answer"]:
+        # Final answer = last proposer letter (fall back to initial if parse failed)
+        final_letter = last_p_letter or init_p_letter or ""
+        if row["answer"] and final_letter == row["answer"]:
             correct += 1
 
     return {
@@ -596,6 +622,7 @@ def main():
     tests = [os.path.join(dataset_dir, f) for f in os.listdir(dataset_dir) if f.endswith('.csv')]
     tests.sort()
     print(f"Found {len(tests)} test files; evaluating with model={model}, temp={TEMPERATURE}, top_p={TOP_P}, rounds={rounds}")
+    print("Schedule: P0 → (C,P) × rounds   |   Final answer = last P")
 
     results = []
     def run_one(fp):
@@ -659,7 +686,7 @@ def main():
         summary['notes']['pre_tokens_estimated'] = not pre_has_tok
         summary['notes']['response_ratio_R'] = R
         print("\nNOTES\n-----")
-        print("* API calls are total model responses (P, C, and P‑revisions).")
+        print("* API calls are total model responses (P and C).")
         if not pre_has_tok:
             print(f"* Pre tokens not logged; estimated via R = total_responses_pre / total_responses_debate = {R:.4f}")
 
