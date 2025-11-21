@@ -171,3 +171,7 @@ code/MMLU/importance_*.csv
 code/MMLU/*_Economist_Doctor_Lawyer_Mathematician_Psychologist_Programmer_Historian/
 code/MMLU/eval_*/
 code/MMLU/evaluation_results_*/
+.DS_Store
+code/MMLU/single_llm_results/
+code/MMLU/standard_dylan/
+code/MMLU/two_agent_debate_results/

@@ -335,10 +335,14 @@ def run_evaluation(test_file: str, selected_roles: Dict[str, List[str]], model: 
 
     print(f"Evaluating {filename} with roles: {roles}")
     # run llmlp_listwise_mmlu.py in OUTPUT_DIR so it writes there
-    # This script is in the output directory, go up one level to find llmlp_listwise_mmlu.py
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(script_dir)
-    llmlp = os.path.join(parent_dir, 'llmlp_listwise_mmlu.py')
+    script_dir = os.path.dirname(os.path.abspath(__file__))    # .../code/MMLU/evaluation_results
+    mmlu_dir   = os.path.dirname(script_dir)                   # .../code/MMLU
+    llmlp = os.path.join(mmlu_dir, 'llmlp_listwise_mmlu.py')
+    if not os.path.exists(llmlp):
+        raise FileNotFoundError(
+            f"llmlp_listwise_mmlu.py not found at {llmlp}. "
+            f"Expected alongside this script's parent directory."
+        )
 
     expected_txt = os.path.join(case_dir, f"{exp_name}_{len(roles)}3.txt")
     expected_json = os.path.join(case_dir, f"{exp_name}_{len(roles)}3.json")

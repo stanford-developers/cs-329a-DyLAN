@@ -733,237 +733,42 @@ python code/MMLU/summarize_run_with_categories.py \
   --price-out-per-m 0.20
 ```
 
----
-
-## Advanced Features
-
-### MMR: Diversity-Aware Agent Selection
-
-**Maximal Marginal Relevance (MMR)** enables diversity-aware agent selection by balancing agent importance with reasoning diversity.
-
-#### Overview
-
-MMR iteratively selects agents that maximize:
-```
-MMR(agent) = λ × importance(agent) + (1-λ) × diversity(agent)
-```
-
-Where:
-- **λ (lambda)**: Trade-off parameter between importance and diversity (0.0 to 1.0)
-- **importance**: Agent's relevance score for the subject (from backward pass)
-- **diversity**: 1 - max cosine similarity to already-selected agents (from embeddings)
-
-#### Quick Start
-
-**Step 1: Generate Embeddings** (one-time setup)
-
 ```bash
+# From repo root
 cd code/MMLU
 
-# Install dependencies
-pip install -r requirements_embeddings.txt
+# Default: Together OSS 20B, evaluation split, 1,000 bootstrap reps
+bash exp_mmlu_single_llm.sh
 
-# Generate embeddings from experiment logs
-python generate_embeddings.py \
-  --log-dir mmlu_downsampled_standard_Economist_Doctor_Lawyer_Mathematician_Psychologist_Programmer_Historian
+# Custom model / more parallelism / more bootstrap reps
+bash exp_mmlu_single_llm.sh \
+  --model "gpt-4o-mini" \
+  --dataset "../../data/MMLU/evaluation" \
+  --max-parallel 6 \
+  --n-boot 2000
+
+# Control decoding
+TEMP=0.0 TOP_P=1.0 bash exp_mmlu_single_llm.sh
 ```
 
-This creates `embeddings_agent_subject.pkl` (~2MB, 768-dim embeddings for 7 agents × 57 subjects). First run downloads the `hkunlp/instructor-xl` model (~5GB).
-
-**Step 2: Run Evaluation with MMR**
+### 14. Run a **two-agent-debate** baseline (+ bootstrap CIs)
 
 ```bash
-# Balanced approach (recommended)
-bash exp_mmlu_evaluation.sh --lambda 0.7 --num-roles 4
-
-# Equal weight to importance and diversity
-bash exp_mmlu_evaluation.sh --lambda 0.5
-
-# Pure diversity (experimental)
-bash exp_mmlu_evaluation.sh --lambda 0.0
-
-# Pure importance (greedy, default behavior)
-bash exp_mmlu_evaluation.sh --lambda 1.0
-```
-
-#### Lambda Parameter Guide
-
-| Lambda | Behavior | Use Case |
-|--------|----------|----------|
-| **1.0** | Pure importance (greedy) | Baseline, maximum accuracy |
-| **0.7-0.8** | Slight diversity preference | **Recommended starting point** |
-| **0.5** | Equal weight | Explore diversity impact |
-| **0.0** | Pure diversity | Maximum diversity, ignore importance |
-
-#### How to Run Experiments
-
-**Compare lambda values:**
-
-```bash
-for lambda in 1.0 0.8 0.5 0.0; do
-  bash exp_mmlu_evaluation.sh \
-    --lambda $lambda \
-    --num-roles 4 \
-    --output "eval_results_lambda_${lambda}"
-done
-```
-
-**Subject-specific tuning:**
-
-```bash
-# High lambda for math (importance matters more)
-bash exp_mmlu_evaluation.sh --lambda 0.9 --dataset math_subjects
-
-# Low lambda for humanities (diversity matters more)
-bash exp_mmlu_evaluation.sh --lambda 0.5 --dataset humanities_subjects
-```
-
-#### Troubleshooting MMR
-
-**"Embeddings file not found"**
-```bash
+# From repo root
 cd code/MMLU
-python generate_embeddings.py
-```
 
-**MMR not being used despite λ < 1.0**
-- Check embeddings exist: `ls embeddings_agent_subject.pkl`
-- Verify console shows "MMR Selection: true"
-- Force: `bash exp_mmlu_evaluation.sh --lambda 0.7 --use-mmr true`
+# Two‑agent debate baseline (≈DyLAN call budget; 6 calls/q)
+bash exp_mmlu_two_agent_debate.sh
 
-**ImportError or missing dependencies**
-```bash
-pip install -r requirements_embeddings.txt
-```
+# Custom model / more rounds / more parallelism / more bootstrap reps
+bash exp_mmlu_two_agent_debate.sh \
+  --model "gpt-4o-mini" \
+  --dataset "../../data/MMLU/evaluation" \
+  --rounds 3 \
+  --max-parallel 6 \
+  --n-boot 2000
 
----
-
-### Embedding Generation
-
-Generate semantic embeddings that capture agent reasoning approaches across subjects for diversity analysis.
-
-#### Quick Start
-
-```bash
-cd code/MMLU
-pip install -r requirements_embeddings.txt
-python generate_embeddings.py
-```
-
-#### What It Does
-
-1. Parses `.log` files from experiment directory
-2. Extracts agent responses (7 agents × ~57 subjects)
-3. Generates 768-dimensional embeddings using instructor-xl model
-4. Averages embeddings per (agent, subject) pair
-5. Saves to `embeddings_agent_subject.pkl` and `.csv`
-
-**Output:** ~399 embeddings (7 agents × 57 subjects), processing time: 10-30 minutes
-
-#### Advanced Options
-
-```bash
-python generate_embeddings.py \
-  --log-dir path/to/logs \
-  --output my_embeddings \
-  --batch-size 16 \
-  --model hkunlp/instructor-large
-```
-
-#### Output Files
-
-**Pickle file** for programmatic access:
-```python
-import pickle
-with open('embeddings_agent_subject.pkl', 'rb') as f:
-    embeddings = pickle.load(f)
-# embeddings[('Economist', 'abstract_algebra')] → np.array (768,)
-```
-
-**CSV file** for human readability:
-```csv
-agent_role,subject,embedding_json
-Economist,abstract_algebra,"[0.123, -0.456, ...]"
-```
-
-#### Troubleshooting
-
-**Out of memory:** Lower batch size
-```bash
-python generate_embeddings.py --batch-size 8
-```
-
-**Empty embeddings:** Check log files exist
-```bash
-ls mmlu_downsampled_standard_*/*.log | head
-```
-
----
-
-### Diversity Analysis
-
-Analyze reasoning diversity between agents using cosine similarity of embeddings.
-
-#### Quick Start
-
-```bash
-cd code/MMLU
-python analyze_agent_diversity.py
-```
-
-#### What It Does
-
-1. Loads embeddings
-2. Computes pairwise cosine similarity for all agent pairs per subject
-3. Calculates diversity metrics (min, max, median, mean, std)
-4. Saves results to `diversity_analysis/`
-5. Prints comprehensive summary
-
-#### Output Files
-
-**`diversity_metrics.csv`** - Per-subject statistics (min/max/mean/median similarity)
-
-**`global_statistics.json`** - Overall statistics:
-```json
-{
-  "overall_min_similarity": 0.5432,
-  "overall_max_similarity": 0.9876,
-  "median_of_subject_medians": 0.8234,
-  "n_subjects": 57
-}
-```
-
-**`extreme_pairs.json`** - Most similar/diverse agent pairs per subject
-
-#### Understanding Results
-
-**Cosine similarity interpretation:**
-- **1.0**: Identical reasoning
-- **0.9-1.0**: Very similar
-- **0.7-0.9**: Moderately similar
-- **0.5-0.7**: Diverse
-- **< 0.5**: Very diverse (rare)
-
-#### Example Usage
-
-**Find subjects needing diverse teams:**
-```python
-import pandas as pd
-df = pd.read_csv('diversity_analysis/diversity_metrics.csv')
-high_diversity = df.nsmallest(10, 'median_similarity')
-```
-
----
-
-## References
-
-**MMR Algorithm:**
-```bibtex
-@inproceedings{carbonell1998use,
-  title={The use of MMR, diversity-based reranking for reordering documents and producing summaries},
-  author={Carbonell, Jaime and Goldstein, Jade},
-  booktitle={Proceedings of the 21st annual international ACM SIGIR conference},
-  pages={335--336},
-  year={1998}
-}
+# Compare against a prior 7‑role run (pre-selection)
+bash exp_mmlu_two_agent_debate.sh \
+  --importance-csv "runs/baseline_20251101-1402/importance_1to7_baseline.csv"
 ```
