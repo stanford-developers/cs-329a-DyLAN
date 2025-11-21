@@ -1,0 +1,13 @@
+test,num_changes,greedy_roles,mmr_roles,removed,added
+virology_test,1,"Programmer, Lawyer, Doctor, Economist","Programmer, Lawyer, Doctor, Historian",Economist,Historian
+high_school_psychology_test,1,"Economist, Doctor, Lawyer, Mathematician","Economist, Doctor, Lawyer, Psychologist",Mathematician,Psychologist
+college_computer_science_test,1,"Programmer, Doctor, Lawyer, Economist","Programmer, Doctor, Psychologist, Economist",Lawyer,Psychologist
+conceptual_physics_test,1,"Programmer, Lawyer, Economist, Doctor","Programmer, Lawyer, Economist, Mathematician",Doctor,Mathematician
+medical_genetics_test,1,"Doctor, Lawyer, Economist, Programmer","Doctor, Economist, Lawyer, Historian",Programmer,Historian
+logical_fallacies_test,1,"Programmer, Doctor, Lawyer, Economist","Programmer, Psychologist, Doctor, Economist",Lawyer,Psychologist
+college_mathematics_test,1,"Lawyer, Economist, Psychologist, Programmer","Lawyer, Economist, Psychologist, Historian",Programmer,Historian
+high_school_microeconomics_test,1,"Programmer, Economist, Psychologist, Doctor","Programmer, Economist, Psychologist, Lawyer",Doctor,Lawyer
+philosophy_test,1,"Historian, Economist, Programmer, Doctor","Historian, Economist, Programmer, Psychologist",Doctor,Psychologist
+human_sexuality_test,1,"Programmer, Doctor, Economist, Lawyer","Programmer, Economist, Doctor, Psychologist",Lawyer,Psychologist
+business_ethics_test,1,"Programmer, Economist, Doctor, Lawyer","Programmer, Economist, Doctor, Psychologist",Lawyer,Psychologist
+high_school_geography_test,1,"Programmer, Doctor, Psychologist, Lawyer","Programmer, Doctor, Psychologist, Mathematician",Lawyer,Mathematician

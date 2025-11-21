@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 dir="$REPO_ROOT/data/MMLU/small_team_selection"
 exp_name="mmlu_downsampled"
 ROLES="['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']"
-MAX_PARALLEL="${MAX_PARALLEL:-4}"
+MAX_PARALLEL="${MAX_PARALLEL:-24}"
 
 # Output folder name must match what anal_imp.sh expects
 OUT_DIR="${exp_name}_$(echo "$ROLES" | tr -d "[]' " | tr ',' '_')"
