@@ -1,9 +1,0 @@
-{
-  "overall_min_similarity": 0.7043677568435669,
-  "overall_max_similarity": 0.9876940250396729,
-  "median_of_subject_medians": 0.9544352293014526,
-  "mean_of_subject_means": 0.9362371563911438,
-  "median_of_subject_mins": 0.8958497047424316,
-  "median_of_subject_maxs": 0.9747037887573242,
-  "n_subjects": 56
-}

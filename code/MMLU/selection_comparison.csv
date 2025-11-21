@@ -1,6 +1,0 @@
-test,num_changes,greedy_roles,mmr_roles,removed,added
-virology_test,1,"Programmer, Lawyer, Doctor, Economist","Programmer, Lawyer, Doctor, Historian",Economist,Historian
-medical_genetics_test,1,"Lawyer, Economist, Doctor, Mathematician","Lawyer, Economist, Doctor, Historian",Mathematician,Historian
-college_mathematics_test,1,"Lawyer, Economist, Psychologist, Mathematician","Lawyer, Economist, Psychologist, Historian",Mathematician,Historian
-philosophy_test,1,"Economist, Historian, Lawyer, Programmer","Economist, Historian, Programmer, Psychologist",Lawyer,Psychologist
-business_ethics_test,1,"Economist, Programmer, Doctor, Lawyer","Economist, Programmer, Doctor, Psychologist",Lawyer,Psychologist
