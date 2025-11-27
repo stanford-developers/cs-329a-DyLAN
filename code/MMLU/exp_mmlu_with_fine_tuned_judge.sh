@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ---------------- user knobs (env overrides supported) ----------------
-# Base model for the agents (used inside DyLAN runs)
+# ---------- user knobs ----------
 MODEL="${MODEL:-openai/gpt-oss-20b}"
-
-# Path to your merged local fine-tuned judge checkpoint directory
 JUDGE_CKPT="${JUDGE_CKPT:-code/MMLU/finetune/ckpts/merged}"
 
-# 7 default DyLAN roles (JSON string). Keep the single quotes!
-ROLES_JSON="${ROLES_JSON:-['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']}"
+# Always use the 7 DyLAN roles by default (JSON, not Python list!)
+ROLES_JSON_DEFAULT='["Economist","Doctor","Lawyer","Mathematician","Psychologist","Programmer","Historian"]'
+ROLES_JSON="${ROLES_JSON:-$ROLES_JSON_DEFAULT}"
 
-# Pre-selection input split (ALWAYS this directory — no fallback)
+# Selection subset only (no fallback to evaluation here)
 SEL_DIR="${SEL_DIR:-data/MMLU/small_team_selection}"
 
-# Where to write new DyLAN pre-selection results that use the local judge
+# Where to write subject logs + artifacts
 OUT_DIR="${OUT_DIR:-code/MMLU/standard_dylan/mmlu_with_local_judge}"
-# ---------------------------------------------------------------------
+# --------------------------------
+
+mkdir -p "$OUT_DIR"
 
 echo "[info] MODEL=${MODEL}"
 echo "[info] JUDGE_CKPT=${JUDGE_CKPT}"
@@ -24,30 +24,17 @@ echo "[info] SEL_DIR=${SEL_DIR}"
 echo "[info] OUT_DIR=${OUT_DIR}"
 echo "[info] ROLES_JSON=${ROLES_JSON}"
 
-if [[ ! -d "${JUDGE_CKPT}" ]]; then
-  echo "[error] JUDGE_CKPT does not exist: ${JUDGE_CKPT}" >&2
-  exit 1
-fi
-if [[ ! -d "${SEL_DIR}" ]]; then
-  echo "[error] SEL_DIR does not exist: ${SEL_DIR}" >&2
-  exit 1
-fi
-
-mkdir -p "${OUT_DIR}"
-
 shopt -s nullglob
-for csv in "${SEL_DIR}"/*.csv; do
-  subject="$(basename "${csv}" .csv)"
-  echo ">>> Subject: ${subject}"
+for csv in "${SEL_DIR}"/*.csv ; do
+  fname=$(basename "$csv" .csv)
+  echo ">>> Subject: ${fname}"
 
-  # IMPORTANT: run_mmlu_with_local_judge.py expects positional args:
-  #   csv  exp_name  model  out_dir  roles_json   --judge-ckpt PATH
+  # run_mmlu_with_local_judge.py expects: csv exp model out_dir roles_json  [--judge-ckpt PATH]
+  # We also tee stdout/stderr into a subject .log so you don't lose progress output.
   python code/MMLU/run_mmlu_with_local_judge.py \
-    "${csv}" "${subject}" "${MODEL}" "${OUT_DIR}" "${ROLES_JSON}" \
-    --judge-ckpt "${JUDGE_CKPT}"
+      "$csv" "$fname" "$MODEL" "$OUT_DIR" "$ROLES_JSON" \
+      --judge-ckpt "$JUDGE_CKPT" \
+      >"${OUT_DIR}/${fname}.log" 2>&1
 done
 
-echo
-echo "[done] Pre-selection runs finished. Outputs are in: ${OUT_DIR}"
-echo "[next] To do the FINAL evaluation on data/MMLU/evaluation using the roles derived here,"
-echo "       run your existing evaluation script pointing at ${OUT_DIR} (e.g., set RESULTS_DIR to ${OUT_DIR})."
+echo "Done. Outputs in: ${OUT_DIR}"
