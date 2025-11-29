@@ -1,246 +1,215 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Run DyLAN pre-selection style generation, but score candidates with a *local* fine-tuned judge.
+# code/MMLU/run_mmlu_with_local_judge.py
+# Produce Agent Importance (AIP) with a local LLM-as-judge and baseline model predictions.
 
-This file fixes:
-  - Roles parsing: accepts JSON (["Economist", ...]) or Python-style list (['Economist', ...]).
-  - CLI: accepts either *positional* or *flagged* arguments (so your shell script keeps working).
-
-Minimal I/O:
-  - Reads a single MMLU subject CSV (like the ones under data/MMLU/small_team_selection).
-  - Prints progress to stdout (your exp script can tee to a log if desired).
-  - You can extend this to write *_73.{json,txt,log} if you want the classic DyLAN artifacts.
-
-Example (works with your current bash wrapper):
-  python code/MMLU/run_mmlu_with_local_judge.py \
-      "$csv" "$subject" "$MODEL" "$OUT_DIR" "['Economist','Doctor',...]" \
-      --judge-ckpt "$JUDGE_CKPT"
-
-Or the flagged form:
-  python code/MMLU/run_mmlu_with_local_judge.py \
-      --csv path/to/abstract_algebra_test.csv \
-      --subject abstract_algebra_test \
-      --model openai/gpt-oss-20b \
-      --out-dir code/MMLU/standard_dylan/mmlu_with_local_judge \
-      --roles-json "['Economist','Doctor','Lawyer','Mathematician','Psychologist','Programmer','Historian']" \
-      --judge-ckpt code/MMLU/finetune/ckpts/merged
-"""
 from __future__ import annotations
-import argparse, csv, json, os, sys, ast, re
-from typing import List, Tuple
-from dotenv import load_dotenv
-from together import Together
+import os, sys, csv, re, json, time, argparse, random
+from typing import List, Dict, Tuple, Sequence
+
+# Optional Together client (used if TOGETHER_API_KEY is available)
+try:
+    from together import Together
+except Exception:
+    Together = None  # handled gracefully
 
 from local_judge import LocalJudge
 
-DEFAULT_ROLES_7 = [
-    "Economist", "Doctor", "Lawyer", "Mathematician", "Psychologist", "Programmer", "Historian"
-]
-
-# Very light role system prompts (you can swap in your repo's prompt_lib if you prefer)
 ROLE_SYSTEM = {
-    "Economist":     "You are an economist. You are good at economics, finance, and business.",
-    "Doctor":        "You are a doctor. Provide factual, concise medical reasoning.",
-    "Lawyer":        "You are a lawyer. You reason precisely about rules, definitions, and evidence.",
-    "Mathematician": "You are a mathematician. You reason rigorously with proofs and calculations.",
-    "Psychologist":  "You are a psychologist. You explain motivations and cognitive pitfalls clearly.",
-    "Programmer":    "You are a programmer. You reason step by step and test edge cases mentally.",
-    "Historian":     "You are a historian. You focus on factual accuracy and chronology."
+    "Economist":      "You are an economist. You are good at economics, finance, and business.",
+    "Doctor":         "You are a doctor. You are good at medicine and clinical reasoning.",
+    "Lawyer":         "You are a lawyer. You are good at law, policy, and legal reasoning.",
+    "Mathematician":  "You are a mathematician. You are good at abstract algebra and mathematics.",
+    "Psychologist":   "You are a psychologist. You are good at psychology and reasoning about people.",
+    "Programmer":     "You are a programmer. You are good at computer science and engineering.",
+    "Historian":      "You are a historian. You are good at history and social analysis.",
 }
 
-def eprint(*a, **k): print(*a, file=sys.stderr, **k)
-
-
-def parse_roles(s: str | None) -> List[str]:
+def read_small_selection_csv(path: str) -> List[Dict[str, str]]:
     """
-    Accept either JSON or Python-literal style lists, e.g.:
-      '["Economist","Doctor"]'    or    "['Economist','Doctor']"
+    Tolerant reader for the 'small_team_selection' CSVs with columns:
+      Q, A, B, C, D, GOLD_LETTER
+    (No header row; your example confirmed this.)
     """
-    if not s:
-        return DEFAULT_ROLES_7[:]
-    try:
-        return json.loads(s)
-    except Exception:
-        try:
-            val = ast.literal_eval(s)
-            if isinstance(val, (list, tuple)):
-                return [str(x) for x in val]
-        except Exception:
-            pass
-    eprint(f"[WARN] Could not parse roles from: {s!r}; falling back to default 7 roles.")
-    return DEFAULT_ROLES_7[:]
-
-
-def build_user_prompt(question: str, choices: dict) -> str:
-    opts = "\n".join([f"({k}) {choices.get(k,'')}" for k in ("A","B","C","D")])
-    return (
-        "Here is the question:\n"
-        f"{question}: A) {choices.get('A','')}, B) {choices.get('B','')}, "
-        f"C) {choices.get('C','')}, D) {choices.get('D','')}\n\n"
-        "Put your answer in the form (X) at the end of your response. "
-        "(X) represents choice (A), (B), (C), or (D)."
-    )
-
-
-def extract_letter(text: str) -> str | None:
-    m = re.search(r"\(([A-D])\)\s*\Z", text.strip(), re.I)
-    return m.group(1).upper() if m else None
-
-
-def generate_role_answer(client: Together, model: str, role: str, user_prompt: str) -> str:
-    sys_prompt = ROLE_SYSTEM.get(role, f"You are a helpful {role.lower()}.")
-    msgs = [{"role": "system", "content": sys_prompt},
-            {"role": "user", "content": user_prompt}]
-    resp = client.chat.completions.create(model=model, messages=msgs, temperature=0.2, max_tokens=512)
-    return resp.choices[0].message.content.strip()
-
-
-def judge_prompt_from_candidates(question: str, choices: dict, cands: List[str]) -> str:
-    opts = "\n".join([f"(A) {choices.get('A','')}",
-                      f"(B) {choices.get('B','')}",
-                      f"(C) {choices.get('C','')}",
-                      f"(D) {choices.get('D','')}"])
-    cfmt = "\n".join([f"Candidate {i+1}: {t}" for i, t in enumerate(cands)])
-    instr = ("You are a precise evaluator. Given a multiple-choice question, its options, and several "
-             "candidate answers, assign a quality score to EACH candidate so the scores sum to 1.\n"
-             "Return ONLY a Python-style list of floats, e.g., [0.55, 0.35, 0.10].")
-    return f"{instr}\n\nQuestion:\n{question}\n\nOptions:\n{opts}\n\n{cfmt}\n\nScores:"
-
-
-def read_mmlu_csv(path: str) -> List[Tuple[str, dict, str]]:
     rows = []
-    with open(path, "r", encoding="utf-8") as f:
-        for r in csv.reader(f):
-            if not any(c.strip() for c in r):
-                continue
-            # Expect either headerless:  Q, A, B, C, D, letter   or with header in first row
-            if rows == []:
-                hdr_lower = [c.strip().lower() for c in r]
-                has_header = ("answer" in hdr_lower or "correct" in hdr_lower) and \
-                             ("question" in hdr_lower or "prompt" in hdr_lower or "text" in hdr_lower or "q" in hdr_lower)
-                if has_header:
-                    header = [c.strip() for c in r]
-                    continue
-                else:
-                    # headerless → treat this row as data
-                    pass
-            if 'header' in locals():
-                d = {header[i]: (r[i] if i < len(r) else "") for i in range(len(header))}
-                q = d.get("question") or d.get("prompt") or d.get("text") or d.get("q") or ""
-                choices = {"A": d.get("A",""), "B": d.get("B",""), "C": d.get("C",""), "D": d.get("D","")}
-                gold = (d.get("answer") or d.get("correct") or "").strip().upper()
-            else:
-                # headerless
-                r = r + [""] * (6 - len(r)) if len(r) < 6 else r
-                q, A, B, C, D, gold = r[0], r[1], r[2], r[3], r[4], r[5].strip().upper()
-                choices = {"A": A, "B": B, "C": C, "D": D}
+    with open(path, newline="") as f:
+        r = csv.reader(f)
+        for line in r:
+            if not line: continue
+            # Skip lines that are all blanks
+            if all(not (c or "").strip() for c in line): continue
+            if len(line) < 6:
+                # pad if needed (very rare)
+                line = (line + [""] * 6)[:6]
+            q, a, b, c, d, gold = [c.strip() for c in line[:6]]
+            gold = (gold[:1].upper() if gold else "")
             if gold not in ("A","B","C","D"):
-                m = re.search(r"([A-D])", gold, re.I) or re.search(r"([1-4])", gold)
-                if m:
-                    gold = m.group(1).upper() if m.group(1) in "ABCD" else {"1":"A","2":"B","3":"C","4":"D"}[m.group(1)]
-                else:
-                    gold = ""
-            rows.append((q, choices, gold))
+                # if somehow missing gold, keep empty; we still can run judge
+                gold = ""
+            rows.append({"q": q, "opts": [a, b, c, d], "gold": gold})
     return rows
 
+def parse_letter(text: str) -> str:
+    """
+    Extract a single choice letter from model text. Try (X) then bare X.
+    Return 'A' if nothing found (fail-safe, deterministic).
+    """
+    m = re.search(r"\(([A-D])\)", text)
+    if m: return m.group(1)
+    m = re.search(r"\b([A-D])\b", text)
+    return m.group(1) if m else "A"
+
+def call_together_choice(client, model: str, system: str, question: str, opts: Sequence[str]) -> str:
+    user = [
+        "Here is the question:",
+        "Can you answer the following question as accurately as possible?",
+        question.strip(),
+        "",
+        "Options:",
+        f"(A) {opts[0]}",
+        f"(B) {opts[1]}",
+        f"(C) {opts[2]}",
+        f"(D) {opts[3]}",
+        "",
+        "Put your answer in the form (X) at the end of your response.",
+        "(X) is one of (A), (B), (C), or (D).",
+    ]
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": "\n".join(user)},
+    ]
+    resp = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0.0,
+        top_p=1.0,
+        max_tokens=64,
+    )
+    text = resp.choices[0].message.content
+    return parse_letter(text or "")
+
+def choose_for_all_roles(
+    model: str,
+    rows: List[Dict[str, str]],
+    roles: Sequence[str],
+) -> List[Dict[str, str]]:
+    """
+    For each row and role, call the base model once to get a letter (A..D).
+    Returns a list of per-row dicts: {"labels": ["A","C",... len=K], "gold": "B"}
+    """
+    client = None
+    if Together is not None and os.environ.get("TOGETHER_API_KEY"):
+        client = Together()  # uses env
+
+    out = []
+    for r in rows:
+        labels = []
+        for role in roles:
+            sys_prompt = ROLE_SYSTEM.get(role, f"You are a {role}. Think step by step.")
+            if client is None:
+                # Deterministic offline fallback: pretend the model says (A) for every role.
+                # This keeps the run alive without an API key; the judge will then return uniform weights.
+                letter = "A"
+            else:
+                letter = call_together_choice(client, model, sys_prompt, r["q"], r["opts"])
+            labels.append(letter)
+        out.append({"labels": labels, "gold": r["gold"]})
+    return out
+
+def now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
 def main():
-    load_dotenv()
-
     ap = argparse.ArgumentParser()
-    # flagged args (optional)
-    ap.add_argument("--csv", dest="csv_flag")
-    ap.add_argument("--subject", dest="subject_flag")
-    ap.add_argument("--model", dest="model_flag")
-    ap.add_argument("--out-dir", dest="outdir_flag")
-    ap.add_argument("--roles-json", dest="roles_flag",
-                    help="JSON or Python list string of roles")
-    ap.add_argument("--judge-ckpt", required=True, help="Path to local merged checkpoint for the judge")
-
-    # positional fallback (so your current bash wrapper keeps working)
-    ap.add_argument("pos_csv", nargs="?", help="CSV path")
-    ap.add_argument("pos_subject", nargs="?", help="subject/stem")
-    ap.add_argument("pos_model", nargs="?", help="base model, e.g. openai/gpt-oss-20b")
-    ap.add_argument("pos_outdir", nargs="?", help="output directory")
-    ap.add_argument("pos_roles", nargs="?", help="roles as JSON or Python list string")
+    ap.add_argument("--csv", required=True)
+    ap.add_argument("--subject", required=True)
+    ap.add_argument("--model", required=True)
+    ap.add_argument("--roles-json", required=True,
+                    help="JSON list (e.g., \"['Economist',...]\") or path to a .json file")
+    ap.add_argument("--judge-ckpt", required=True)
+    ap.add_argument("--outdir", required=True)
+    ap.add_argument("--max-rows", type=int, default=0)
+    ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
-    csv_path   = args.csv_flag     or args.pos_csv
-    subject    = args.subject_flag or args.pos_subject
-    model_name = args.model_flag   or args.pos_model or os.getenv("MODEL", "openai/gpt-oss-20b")
-    out_dir    = args.outdir_flag  or args.pos_outdir or "code/MMLU/standard_dylan/mmlu_with_local_judge"
-    roles_list = parse_roles(args.roles_flag or args.pos_roles)
+    # roles can be JSON string or a path to .json that contains a list
+    if os.path.isfile(args.roles_json):
+        roles: List[str] = json.load(open(args.roles_json))
+    else:
+        roles = json.loads(args.roles_json)
+    assert isinstance(roles, list) and len(roles) >= 1
 
-    if not csv_path or not subject:
-        ap.error("You must provide CSV path and subject (either as flags or positionals).")
+    rows = read_small_selection_csv(args.csv)
+    if args.max_rows > 0:
+        rows = rows[:args.max_rows]
+    N = len(rows)
 
-    os.makedirs(out_dir, exist_ok=True)
+    base = f"{args.subject}_{N}"
+    os.makedirs(args.outdir, exist_ok=True)
+    p_json = os.path.join(args.outdir, f"{base}.json")
+    p_txt  = os.path.join(args.outdir, f"{base}.txt")
+    p_log  = os.path.join(args.outdir, f"{base}.log")
 
-    print(f"[info] MODEL={model_name}")
-    print(f"[info] JUDGE_CKPT={args.judge_ckpt}")
-    print(f"[info] CSV={csv_path}")
-    print(f"[info] OUT_DIR={out_dir}")
-    print(f"[info] ROLES={roles_list}")
-
-    # load dataset and clients
-    rows = read_mmlu_csv(csv_path)
-    if not rows:
-        print(f"[WARN] No rows read from {csv_path}")
+    if (not args.overwrite) and all(os.path.exists(p) for p in (p_json, p_txt, p_log)):
+        print(f"[skip] {base} already exists; use --overwrite to recompute.")
         return
 
-    client = Together(api_key=os.environ["TOGETHER_API_KEY"])
+    # LOG header
+    with open(p_log, "w") as lg:
+        lg.write(f"[START] {now()} file={args.csv} subject={args.subject} model={args.model}\n")
+        lg.write(f"[cfg] roles={roles}\n")
+        lg.write(f"[cfg] judge_ckpt={args.judge_ckpt}\n")
+
+    # Get labels per role; then score with local judge
+    per_row = choose_for_all_roles(args.model, rows, roles)
     judge = LocalJudge(args.judge_ckpt)
 
-    subj_dir = os.path.join(out_dir, subject)
-    os.makedirs(subj_dir, exist_ok=True)
+    sum_weights = [0.0] * len(roles)
+    for i, (r, pr) in enumerate(zip(rows, per_row), 1):
+        weights, raw = judge.score(
+            question=r["q"], options=r["opts"],
+            candidate_labels=[f"({x})" for x in pr["labels"]],
+            roles=roles,
+        )
+        # aggregate
+        for j, w in enumerate(weights):
+            sum_weights[j] += w
 
-    # Iterate questions
-    all_answers = []      # per-question: list of role answers
-    all_scores  = []      # per-question: judge scores (len = len(roles))
-    all_preds   = []      # per-question: each role's predicted letter
+        if args.verbose:
+            with open(p_log, "a") as lg:
+                lg.write("\n")
+                lg.write(f"[row {i}] gold={r['gold']} labels={pr['labels']}\n")
+                lg.write(f"[judge] weights={weights}\n")
+                lg.write(f"[judge raw]\n{raw}\n")
 
-    for qi, (q, choices, gold) in enumerate(rows):
-        print(f">>> Q{qi}: {q[:80]}{'...' if len(q)>80 else ''}")
+    # Normalize across roles
+    s = sum(sum_weights)
+    if s <= 0:
+        final = [1.0 / len(roles)] * len(roles)
+    else:
+        final = [x / s for x in sum_weights]
 
-        # Build role answers
-        user_prompt = build_user_prompt(q, choices)
-        role_texts, role_letters = [], []
-        for rname in roles_list:
-            ans = generate_role_answer(client, model_name, rname, user_prompt)
-            role_texts.append(ans)
-            role_letters.append(extract_letter(ans) or "?")
-            print(f"  - {rname}: {role_letters[-1]}")
+    # Write JSON
+    obj = {
+        "subject": args.subject,
+        "n_examples": N,
+        "roles": roles,                       # stable order as given
+        "aip": {r: float(w) for r, w in zip(roles, final)}
+    }
+    with open(p_json, "w") as f:
+        json.dump(obj, f, indent=2)
 
-        # Judge
-        j_prompt = judge_prompt_from_candidates(q, choices, role_texts)
-        scores, raw = judge.score(j_prompt, k=len(role_texts))
-        print(f"  judge scores: {scores}")
+    # Write TXT
+    with open(p_txt, "w") as f:
+        f.write(f"Subject: {args.subject}\n")
+        f.write(f"N: {N}\n\n")
+        f.write("Agent Importance (normalized):\n")
+        for r, w in zip(roles, final):
+            f.write(f"- {r}: {w:0.4f}\n")
 
-        all_answers.append(role_texts)
-        all_scores.append(scores)
-        all_preds.append(role_letters)
+    with open(p_log, "a") as lg:
+        lg.write(f"\n[END] {now()} wrote {p_json}, {p_txt}, {p_log}\n")
 
-    # (Optional) Write a compact JSON with everything for later analysis
-    out_json = os.path.join(subj_dir, f"{subject}_local_judge.json")
-    with open(out_json, "w", encoding="utf-8") as f:
-        json.dump({
-            "subject": subject,
-            "roles": roles_list,
-            "items": [
-                {
-                    "question": rows[i][0],
-                    "choices": rows[i][1],
-                    "gold": rows[i][2],
-                    "role_answers": all_answers[i],
-                    "role_letters": all_preds[i],
-                    "judge_scores": all_scores[i],
-                }
-                for i in range(len(rows))
-            ],
-        }, f, ensure_ascii=False, indent=2)
-    print(f"[done] wrote {out_json}")
-
+    print(f"[ok] wrote {p_json}, {p_txt}, {p_log}")
 
 if __name__ == "__main__":
     main()

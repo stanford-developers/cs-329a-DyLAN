@@ -1,40 +1,57 @@
 #!/usr/bin/env bash
+# code/MMLU/exp_mmlu_with_fine_tuned_judge.sh
 set -euo pipefail
 
-# ---------- user knobs ----------
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../.. && pwd)"
+# Load keys (.env at repo root)
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
 MODEL="${MODEL:-openai/gpt-oss-20b}"
-JUDGE_CKPT="${JUDGE_CKPT:-code/MMLU/finetune/ckpts/merged}"
+JUDGE_CKPT="${JUDGE_CKPT:-$REPO_ROOT/code/MMLU/finetune/ckpts/merged}"
+ROLES="${ROLES:-[\"Economist\",\"Doctor\",\"Lawyer\",\"Mathematician\",\"Psychologist\",\"Programmer\",\"Historian\"]}"
+SEL_DIR="${SEL_DIR:-$REPO_ROOT/data/MMLU/small_team_selection}"
+OUT_DIR="${OUT_DIR:-$REPO_ROOT/code/MMLU/standard_dylan/mmlu_with_local_judge}"
+MAX_PARALLEL="${MAX_PARALLEL:-1}"
+OVERWRITE="${OVERWRITE:-0}"
 
-# Always use the 7 DyLAN roles by default (JSON, not Python list!)
-ROLES_JSON_DEFAULT='["Economist","Doctor","Lawyer","Mathematician","Psychologist","Programmer","Historian"]'
-ROLES_JSON="${ROLES_JSON:-$ROLES_JSON_DEFAULT}"
-
-# Selection subset only (no fallback to evaluation here)
-SEL_DIR="${SEL_DIR:-data/MMLU/small_team_selection}"
-
-# Where to write subject logs + artifacts
-OUT_DIR="${OUT_DIR:-code/MMLU/standard_dylan/mmlu_with_local_judge}"
-# --------------------------------
+echo "[info] MODEL=$MODEL"
+echo "[info] JUDGE_CKPT=$JUDGE_CKPT"
+echo "[info] SEL_DIR=$SEL_DIR"
+echo "[info] OUT_DIR=$OUT_DIR"
+echo "[info] ROLES_JSON=$ROLES"
+echo "[info] MAX_PARALLEL=$MAX_PARALLEL"
+echo "[info] OVERWRITE=$OVERWRITE"
 
 mkdir -p "$OUT_DIR"
 
-echo "[info] MODEL=${MODEL}"
-echo "[info] JUDGE_CKPT=${JUDGE_CKPT}"
-echo "[info] SEL_DIR=${SEL_DIR}"
-echo "[info] OUT_DIR=${OUT_DIR}"
-echo "[info] ROLES_JSON=${ROLES_JSON}"
+active_jobs() { jobs -rp | wc -l; }
+wait_any() { local pids=($(jobs -rp)); if [[ ${#pids[@]} -gt 0 ]]; then wait "${pids[0]}" || true; fi; }
 
 shopt -s nullglob
-for csv in "${SEL_DIR}"/*.csv ; do
-  fname=$(basename "$csv" .csv)
-  echo ">>> Subject: ${fname}"
+for csv in "$SEL_DIR"/*.csv ; do
+  subj="$(basename "$csv" .csv)"
+  echo ">>> Subject: $subj"
 
-  # run_mmlu_with_local_judge.py expects: csv exp model out_dir roles_json  [--judge-ckpt PATH]
-  # We also tee stdout/stderr into a subject .log so you don't lose progress output.
-  python code/MMLU/run_mmlu_with_local_judge.py \
-      "$csv" "$fname" "$MODEL" "$OUT_DIR" "$ROLES_JSON" \
+  while (( $(active_jobs) >= MAX_PARALLEL )); do wait_any; done
+  (
+    python "$REPO_ROOT/code/MMLU/run_mmlu_with_local_judge.py" \
+      --csv "$csv" \
+      --subject "$subj" \
+      --model "$MODEL" \
+      --roles-json "$ROLES" \
       --judge-ckpt "$JUDGE_CKPT" \
-      >"${OUT_DIR}/${fname}.log" 2>&1
+      --outdir "$OUT_DIR" \
+      $( ((OVERWRITE==1)) && echo --overwrite )
+  ) &
 done
 
-echo "Done. Outputs in: ${OUT_DIR}"
+fails=0
+for pid in $(jobs -rp); do
+  if ! wait "$pid"; then fails=$((fails+1)); fi
+done
+echo "Done. Outputs in: $OUT_DIR (failures: $fails)"
