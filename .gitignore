@@ -175,3 +175,5 @@ code/MMLU/evaluation_results_*/
 code/MMLU/single_llm_results/
 code/MMLU/standard_dylan/
 code/MMLU/two_agent_debate_results/
+code/MMLU/baseline_gpt-oss-20b/
+.claude/
