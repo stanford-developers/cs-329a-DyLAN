@@ -1,6 +1,0 @@
-[True, False, True, True, False, True] 0.6666666666666666
-6 1.0
-[]
-[]
-1239
-4093
