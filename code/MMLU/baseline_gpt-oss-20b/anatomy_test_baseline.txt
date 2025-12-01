@@ -1,0 +1,6 @@
+[False, True, False, True, True, True, True] 0.7142857142857143
+7 1.0
+[]
+[]
+1426
+4784

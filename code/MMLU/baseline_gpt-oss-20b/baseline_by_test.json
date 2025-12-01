@@ -1,0 +1,572 @@
+{
+  "abstract_algebra_test_baseline": {
+    "test_name": "abstract_algebra_test_baseline",
+    "subject": "abstract_algebra_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 4,
+    "responses": 5,
+    "prompt_tokens": 982,
+    "completion_tokens": 4723
+  },
+  "anatomy_test_baseline": {
+    "test_name": "anatomy_test_baseline",
+    "subject": "anatomy_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 7,
+    "correct": 5,
+    "responses": 7,
+    "prompt_tokens": 1426,
+    "completion_tokens": 4784
+  },
+  "astronomy_test_baseline": {
+    "test_name": "astronomy_test_baseline",
+    "subject": "astronomy_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 8,
+    "correct": 7,
+    "responses": 8,
+    "prompt_tokens": 1747,
+    "completion_tokens": 4002
+  },
+  "business_ethics_test_baseline": {
+    "test_name": "business_ethics_test_baseline",
+    "subject": "business_ethics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 5,
+    "responses": 5,
+    "prompt_tokens": 1080,
+    "completion_tokens": 2045
+  },
+  "clinical_knowledge_test_baseline": {
+    "test_name": "clinical_knowledge_test_baseline",
+    "subject": "clinical_knowledge_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 12,
+    "correct": 10,
+    "responses": 12,
+    "prompt_tokens": 2438,
+    "completion_tokens": 6794
+  },
+  "college_biology_test_baseline": {
+    "test_name": "college_biology_test_baseline",
+    "subject": "college_biology_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 7,
+    "correct": 7,
+    "responses": 7,
+    "prompt_tokens": 1690,
+    "completion_tokens": 4041
+  },
+  "college_chemistry_test_baseline": {
+    "test_name": "college_chemistry_test_baseline",
+    "subject": "college_chemistry_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 5,
+    "responses": 5,
+    "prompt_tokens": 1050,
+    "completion_tokens": 3943
+  },
+  "college_computer_science_test_baseline": {
+    "test_name": "college_computer_science_test_baseline",
+    "subject": "college_computer_science_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 4,
+    "responses": 5,
+    "prompt_tokens": 1299,
+    "completion_tokens": 4215
+  },
+  "college_mathematics_test_baseline": {
+    "test_name": "college_mathematics_test_baseline",
+    "subject": "college_mathematics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 4,
+    "responses": 5,
+    "prompt_tokens": 1071,
+    "completion_tokens": 4924
+  },
+  "college_medicine_test_baseline": {
+    "test_name": "college_medicine_test_baseline",
+    "subject": "college_medicine_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 8,
+    "correct": 7,
+    "responses": 8,
+    "prompt_tokens": 1808,
+    "completion_tokens": 4681
+  },
+  "college_physics_test_baseline": {
+    "test_name": "college_physics_test_baseline",
+    "subject": "college_physics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 6,
+    "correct": 6,
+    "responses": 6,
+    "prompt_tokens": 1283,
+    "completion_tokens": 3502
+  },
+  "computer_security_test_baseline": {
+    "test_name": "computer_security_test_baseline",
+    "subject": "computer_security_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 5,
+    "responses": 5,
+    "prompt_tokens": 931,
+    "completion_tokens": 2114
+  },
+  "conceptual_physics_test_baseline": {
+    "test_name": "conceptual_physics_test_baseline",
+    "subject": "conceptual_physics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 11,
+    "correct": 11,
+    "responses": 11,
+    "prompt_tokens": 2059,
+    "completion_tokens": 4068
+  },
+  "econometrics_test_baseline": {
+    "test_name": "econometrics_test_baseline",
+    "subject": "econometrics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 6,
+    "correct": 6,
+    "responses": 6,
+    "prompt_tokens": 1519,
+    "completion_tokens": 3513
+  },
+  "electrical_engineering_test_baseline": {
+    "test_name": "electrical_engineering_test_baseline",
+    "subject": "electrical_engineering_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 7,
+    "correct": 6,
+    "responses": 7,
+    "prompt_tokens": 1345,
+    "completion_tokens": 6366
+  },
+  "elementary_mathematics_test_baseline": {
+    "test_name": "elementary_mathematics_test_baseline",
+    "subject": "elementary_mathematics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 17,
+    "correct": 17,
+    "responses": 17,
+    "prompt_tokens": 3577,
+    "completion_tokens": 5752
+  },
+  "formal_logic_test_baseline": {
+    "test_name": "formal_logic_test_baseline",
+    "subject": "formal_logic_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 6,
+    "correct": 6,
+    "responses": 6,
+    "prompt_tokens": 1611,
+    "completion_tokens": 4599
+  },
+  "global_facts_test_baseline": {
+    "test_name": "global_facts_test_baseline",
+    "subject": "global_facts_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 2,
+    "responses": 5,
+    "prompt_tokens": 921,
+    "completion_tokens": 4392
+  },
+  "high_school_biology_test_baseline": {
+    "test_name": "high_school_biology_test_baseline",
+    "subject": "high_school_biology_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 14,
+    "correct": 12,
+    "responses": 14,
+    "prompt_tokens": 3214,
+    "completion_tokens": 9368
+  },
+  "high_school_chemistry_test_baseline": {
+    "test_name": "high_school_chemistry_test_baseline",
+    "subject": "high_school_chemistry_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 10,
+    "correct": 9,
+    "responses": 10,
+    "prompt_tokens": 2356,
+    "completion_tokens": 5982
+  },
+  "high_school_computer_science_test_baseline": {
+    "test_name": "high_school_computer_science_test_baseline",
+    "subject": "high_school_computer_science_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 5,
+    "responses": 5,
+    "prompt_tokens": 1161,
+    "completion_tokens": 2216
+  },
+  "high_school_european_history_test_baseline": {
+    "test_name": "high_school_european_history_test_baseline",
+    "subject": "high_school_european_history_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 8,
+    "correct": 7,
+    "responses": 8,
+    "prompt_tokens": 3284,
+    "completion_tokens": 3841
+  },
+  "high_school_geography_test_baseline": {
+    "test_name": "high_school_geography_test_baseline",
+    "subject": "high_school_geography_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 9,
+    "correct": 8,
+    "responses": 9,
+    "prompt_tokens": 1741,
+    "completion_tokens": 4631
+  },
+  "high_school_government_and_politics_test_baseline": {
+    "test_name": "high_school_government_and_politics_test_baseline",
+    "subject": "high_school_government_and_politics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 9,
+    "correct": 9,
+    "responses": 9,
+    "prompt_tokens": 1976,
+    "completion_tokens": 4471
+  },
+  "high_school_macroeconomics_test_baseline": {
+    "test_name": "high_school_macroeconomics_test_baseline",
+    "subject": "high_school_macroeconomics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 17,
+    "correct": 15,
+    "responses": 17,
+    "prompt_tokens": 3488,
+    "completion_tokens": 10320
+  },
+  "high_school_mathematics_test_baseline": {
+    "test_name": "high_school_mathematics_test_baseline",
+    "subject": "high_school_mathematics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 12,
+    "correct": 10,
+    "responses": 12,
+    "prompt_tokens": 2648,
+    "completion_tokens": 10131
+  },
+  "high_school_microeconomics_test_baseline": {
+    "test_name": "high_school_microeconomics_test_baseline",
+    "subject": "high_school_microeconomics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 11,
+    "correct": 9,
+    "responses": 11,
+    "prompt_tokens": 2234,
+    "completion_tokens": 6848
+  },
+  "high_school_physics_test_baseline": {
+    "test_name": "high_school_physics_test_baseline",
+    "subject": "high_school_physics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 7,
+    "correct": 5,
+    "responses": 7,
+    "prompt_tokens": 1716,
+    "completion_tokens": 6732
+  },
+  "high_school_psychology_test_baseline": {
+    "test_name": "high_school_psychology_test_baseline",
+    "subject": "high_school_psychology_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 23,
+    "correct": 23,
+    "responses": 23,
+    "prompt_tokens": 4868,
+    "completion_tokens": 10353
+  },
+  "high_school_statistics_test_baseline": {
+    "test_name": "high_school_statistics_test_baseline",
+    "subject": "high_school_statistics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 10,
+    "correct": 9,
+    "responses": 10,
+    "prompt_tokens": 2575,
+    "completion_tokens": 6138
+  },
+  "high_school_us_history_test_baseline": {
+    "test_name": "high_school_us_history_test_baseline",
+    "subject": "high_school_us_history_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 10,
+    "correct": 10,
+    "responses": 10,
+    "prompt_tokens": 4439,
+    "completion_tokens": 3836
+  },
+  "high_school_world_history_test_baseline": {
+    "test_name": "high_school_world_history_test_baseline",
+    "subject": "high_school_world_history_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 11,
+    "correct": 8,
+    "responses": 11,
+    "prompt_tokens": 6199,
+    "completion_tokens": 6445
+  },
+  "human_aging_test_baseline": {
+    "test_name": "human_aging_test_baseline",
+    "subject": "human_aging_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 10,
+    "correct": 10,
+    "responses": 10,
+    "prompt_tokens": 1858,
+    "completion_tokens": 4196
+  },
+  "human_sexuality_test_baseline": {
+    "test_name": "human_sexuality_test_baseline",
+    "subject": "human_sexuality_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 7,
+    "correct": 5,
+    "responses": 7,
+    "prompt_tokens": 1357,
+    "completion_tokens": 3213
+  },
+  "international_law_test_baseline": {
+    "test_name": "international_law_test_baseline",
+    "subject": "international_law_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 6,
+    "correct": 6,
+    "responses": 6,
+    "prompt_tokens": 1380,
+    "completion_tokens": 2655
+  },
+  "jurisprudence_test_baseline": {
+    "test_name": "jurisprudence_test_baseline",
+    "subject": "jurisprudence_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 6,
+    "correct": 4,
+    "responses": 6,
+    "prompt_tokens": 1385,
+    "completion_tokens": 4715
+  },
+  "logical_fallacies_test_baseline": {
+    "test_name": "logical_fallacies_test_baseline",
+    "subject": "logical_fallacies_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 8,
+    "correct": 8,
+    "responses": 8,
+    "prompt_tokens": 1640,
+    "completion_tokens": 4182
+  },
+  "machine_learning_test_baseline": {
+    "test_name": "machine_learning_test_baseline",
+    "subject": "machine_learning_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 6,
+    "correct": 5,
+    "responses": 6,
+    "prompt_tokens": 1452,
+    "completion_tokens": 3581
+  },
+  "management_test_baseline": {
+    "test_name": "management_test_baseline",
+    "subject": "management_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 6,
+    "correct": 6,
+    "responses": 6,
+    "prompt_tokens": 1128,
+    "completion_tokens": 2297
+  },
+  "marketing_test_baseline": {
+    "test_name": "marketing_test_baseline",
+    "subject": "marketing_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 11,
+    "correct": 10,
+    "responses": 11,
+    "prompt_tokens": 2096,
+    "completion_tokens": 4276
+  },
+  "medical_genetics_test_baseline": {
+    "test_name": "medical_genetics_test_baseline",
+    "subject": "medical_genetics_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 5,
+    "responses": 5,
+    "prompt_tokens": 925,
+    "completion_tokens": 2357
+  },
+  "miscellaneous_test_baseline": {
+    "test_name": "miscellaneous_test_baseline",
+    "subject": "miscellaneous_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 33,
+    "correct": 29,
+    "responses": 33,
+    "prompt_tokens": 6409,
+    "completion_tokens": 13455
+  },
+  "moral_disputes_test_baseline": {
+    "test_name": "moral_disputes_test_baseline",
+    "subject": "moral_disputes_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 15,
+    "correct": 13,
+    "responses": 15,
+    "prompt_tokens": 3137,
+    "completion_tokens": 7795
+  },
+  "moral_scenarios_test_baseline": {
+    "test_name": "moral_scenarios_test_baseline",
+    "subject": "moral_scenarios_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 37,
+    "correct": 30,
+    "responses": 37,
+    "prompt_tokens": 9159,
+    "completion_tokens": 16326
+  },
+  "nutrition_test_baseline": {
+    "test_name": "nutrition_test_baseline",
+    "subject": "nutrition_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 14,
+    "correct": 12,
+    "responses": 14,
+    "prompt_tokens": 3068,
+    "completion_tokens": 9541
+  },
+  "philosophy_test_baseline": {
+    "test_name": "philosophy_test_baseline",
+    "subject": "philosophy_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 14,
+    "correct": 9,
+    "responses": 14,
+    "prompt_tokens": 2882,
+    "completion_tokens": 10310
+  },
+  "prehistory_test_baseline": {
+    "test_name": "prehistory_test_baseline",
+    "subject": "prehistory_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 14,
+    "correct": 11,
+    "responses": 14,
+    "prompt_tokens": 2908,
+    "completion_tokens": 6537
+  },
+  "professional_accounting_test_baseline": {
+    "test_name": "professional_accounting_test_baseline",
+    "subject": "professional_accounting_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 13,
+    "correct": 12,
+    "responses": 13,
+    "prompt_tokens": 3060,
+    "completion_tokens": 10394
+  },
+  "professional_law_test_baseline": {
+    "test_name": "professional_law_test_baseline",
+    "subject": "professional_law_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 63,
+    "correct": 36,
+    "responses": 63,
+    "prompt_tokens": 24570,
+    "completion_tokens": 67538
+  },
+  "professional_medicine_test_baseline": {
+    "test_name": "professional_medicine_test_baseline",
+    "subject": "professional_medicine_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 12,
+    "correct": 8,
+    "responses": 12,
+    "prompt_tokens": 3854,
+    "completion_tokens": 7443
+  },
+  "professional_psychology_test_baseline": {
+    "test_name": "professional_psychology_test_baseline",
+    "subject": "professional_psychology_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 26,
+    "correct": 24,
+    "responses": 26,
+    "prompt_tokens": 5460,
+    "completion_tokens": 15013
+  },
+  "public_relations_test_baseline": {
+    "test_name": "public_relations_test_baseline",
+    "subject": "public_relations_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 6,
+    "correct": 4,
+    "responses": 6,
+    "prompt_tokens": 1239,
+    "completion_tokens": 4093
+  },
+  "security_studies_test_baseline": {
+    "test_name": "security_studies_test_baseline",
+    "subject": "security_studies_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 11,
+    "correct": 9,
+    "responses": 11,
+    "prompt_tokens": 2897,
+    "completion_tokens": 8084
+  },
+  "sociology_test_baseline": {
+    "test_name": "sociology_test_baseline",
+    "subject": "sociology_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 9,
+    "correct": 9,
+    "responses": 9,
+    "prompt_tokens": 1815,
+    "completion_tokens": 4756
+  },
+  "us_foreign_policy_test_baseline": {
+    "test_name": "us_foreign_policy_test_baseline",
+    "subject": "us_foreign_policy_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 5,
+    "correct": 5,
+    "responses": 5,
+    "prompt_tokens": 1058,
+    "completion_tokens": 2435
+  },
+  "virology_test_baseline": {
+    "test_name": "virology_test_baseline",
+    "subject": "virology_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 8,
+    "correct": 3,
+    "responses": 8,
+    "prompt_tokens": 1517,
+    "completion_tokens": 4655
+  },
+  "world_religions_test_baseline": {
+    "test_name": "world_religions_test_baseline",
+    "subject": "world_religions_test",
+    "meta": "other (business, health, misc.)",
+    "questions": 8,
+    "correct": 8,
+    "responses": 8,
+    "prompt_tokens": 1454,
+    "completion_tokens": 3367
+  }
+}
