@@ -1,14 +1,17 @@
-import json, os, pathlib
-
+import json
+import os
+import pathlib
 
 # -------------------------------
-# Optional: load a JSON profile from PROMPT_PROFILE
+# Optional JSON prompt profile
 # -------------------------------
 
 def _maybe_load_profile():
     """
     Load a JSON prompt profile if PROMPT_PROFILE is set.
-    Shape:
+
+    Expected shape (flexible, but typically):
+
       {
         "ROLE_MAP": { "Mathematician": "...", ... },
         "ROLE_MAP_MATH": { ... },
@@ -32,184 +35,190 @@ def _maybe_load_profile():
 
 _PROFILE = _maybe_load_profile()
 
+# -------------------------------
+# Global generation settings
+# -------------------------------
+
 TEMPERATURE = 1.0
 MAX_TOKENS = 2048
 
-# -------------------------------
-# Defaults (overridable by profile)
-# -------------------------------
-
-MMLU_SYSTEM_PROMPT = _PROFILE.get(
-    "SYSTEM_PROMPT_MMLU",
-    "Here's a debate. Explain your reasons at each round thoroughly.\nAll questions are single choice.",
+MMLU_SYSTEM_PROMPT = (
+    "It's a debate. Explain your reasons at each round thoroughly.\n"
+    "All questions are single choice."
 )
-
-SYSTEM_PROMPT_MMLU = MMLU_SYSTEM_PROMPT  # alias used elsewhere
-
-SYSTEM_PROMPT_MATH = _PROFILE.get(
-    "SYSTEM_PROMPT_MATH",
-    "It's a debate. Explain your reasons at each round thoroughly.\nFollow the given examples and answer the mathematics problem."
-)
-
 MMLU_QUESTION = "Can you answer the following question as accurately as possible? {}: A) {}, B) {}, C) {}, D) {} "
 
-ROLE_MAP = _PROFILE.get("ROLE_MAP", {
-    # Defaults
-    "Assistant": "You are a super-intelligent AI assistant capable of performing tasks more effectively than humans.",
-    "Mathematician": "You are a mathematician. You are good at math games, arithmetic calculation, and long-term planning.",
-    "Economist": "You are an economist. You are good at economics, finance, and business. You have experience on understanding charts while interpreting the macroeconomic environment prevailing across world economies.",
-    "Psychologist": "You are a psychologist. You are good at psychology, sociology, and philosophy. You give people scientific suggestions that will make them feel better.",
-    "Lawyer": "You are a lawyer. You are good at law, politics, and history.",
-    "Doctor": "You are a doctor and come up with creative treatments for illnesses or diseases. You are able to recommend conventional medicines, herbal remedies and other natural alternatives. You also consider the patient’s age, lifestyle and medical history when providing your recommendations.",
-    "Programmer": "You are a programmer. You are good at computer science, engineering, and physics. You have experience in designing and developing computer software and hardware.",
-    "Historian": "You are a historian. You research and analyze cultural, economic, political, and social events in the past, collect data from primary sources and use it to develop theories about what happened during various periods of history."
-})
+ROLE_MAP = _PROFILE.get(
+    "ROLE_MAP",
+    {
+        "Assistant": "You are a super-intelligent AI assistant capable of performing tasks more effectively than humans.",
+        "Mathematician": "You are a mathematician. You are good at math games, arithmetic calculation, and long-term planning.",
+        "Economist": "You are an economist. You are good at economics, finance, and business.",
+        "Psychologist": "You are a psychologist. You are good at psychology, sociology, and philosophy.",
+        "Lawyer": "You are a lawyer. You are good at law, politics, and history.",
+        "Doctor": "You are a doctor. Consider age, lifestyle and medical history in recommendations.",
+        "Programmer": "You are a programmer. You are good at computer science, engineering, and physics.",
+        "Historian": "You are a historian. You analyze cultural, economic, political, and social events in the past.",
+    },
+)
 
-ROLE_MAP_MATH = _PROFILE.get("ROLE_MAP_MATH", {
-    "Assistant": "You are a super-intelligent AI assistant capable of performing tasks more effectively than humans.",
-    "Mathematician": "You are a mathematician. You are good at math games, arithmetic calculation, and long-term planning.",
-    "AlgebraExpert": "You are an expert in the field of algebra, skilled at solving equations, understanding variables and adept at the logical manipulation of symbols.",
-    "CountingProbabilitySpecialist": "You specialize in the realm of counting and probability, able to calculate complex events with accuracy, analyze data and predict outcomes.",
-    "GeometryWizard": "You are a wizard of geometry, deeply familiar with shapes, dimensions, and properties, and capable of theorizing spatial relationships and understanding geometric proofs.",
-    "IntermediateAlgebraMaestro": "You are a maestro of intermediate algebra, adept at handling polynomials, quadratic equations, and dealing with complex numerical relationships.",
-    "NumberTheoryScholar": "As a scholar in number theory, you excel in studying properties and relationships of numbers. Prime numbers, divisibility, and mathematical patterns are within your area of expertise.",
-    "PrealgebraProdigy": "You are a prodigy in prealgebra, skillful at understanding mathematical principles and fundamentals like operations, fractions, and basic equations.",
-    "PrecalculusGuru": "You are a guru in precalculus, proficient at handling functions, limits, rates of change, and confidently preparing for the concepts of calculus."
-})
+ROLE_MAP_MATH = _PROFILE.get(
+    "ROLE_MAP_MATH",
+    {
+        "Assistant": "You are a super-intelligent AI assistant capable of performing tasks more effectively than humans.",
+        "Mathematician": "You are a mathematician. You are good at math games, arithmetic calculation, and long-term planning.",
+        "AlgebraExpert": "You are an expert in the field of algebra, skilled at solving equations, understanding variables and adept at the logical manipulation of symbols.",
+        "CountingProbabilitySpecialist": "You specialize in the realm of counting and probability, able to calculate complex events with accuracy, analyze data and predict outcomes.",
+        "GeometryWizard": "You are a wizard of geometry, deeply familiar with shapes, dimensions, and properties, and capable of theorizing spatial relationships and understanding geometric proofs.",
+        "IntermediateAlgebraMaestro": "You are a maestro of intermediate algebra, adept at handling polynomials, quadratic equations, and dealing with complex numerical relationships.",
+        "NumberTheoryScholar": "As a scholar in number theory, you excel in studying properties and relationships of numbers. Prime numbers, divisibility, and mathematical patterns are within your area of expertise.",
+        "PrealgebraProdigy": "You are a prodigy in prealgebra, skillful at understanding mathematical principles and fundamentals like operations, fractions, and basic equations.",
+        "PrecalculusGuru": "You are a guru in precalculus, proficient at handling functions, limits, rates of change, and confidently preparing for the concepts of calculus.",
+    },
+)
 
 SYSTEM_PROMPT_MMLU = _PROFILE.get(
     "SYSTEM_PROMPT_MMLU",
-    "Here's a debate. Explain your reasons at each round thoroughly.\nAll questions are single choice."
+    "Here's a debate. Explain your reasons at each round thoroughly.\nAll questions are single choice.",
 )
 SYSTEM_PROMPT_MATH = _PROFILE.get(
     "SYSTEM_PROMPT_MATH",
-    "It's a debate. Explain your reasons at each round thoroughly.\nFollow the given examples and answer the mathematics problem."
+    "It's a debate. Explain your reasons at each round thoroughly.\n"
+    "Follow the given examples and answer the mathematics problem.",
 )
 
-
 # -------------------------------
-# Prompt builders (RANKER + AGENT)
+# Message construction
 # -------------------------------
 
 def construct_ranking_message(responses, question, qtype):
     """
-    Build the user message for the listwise ranker.
-    Pull instruction tail from profile keys if present:
-      - RANKER_INSTRUCTION_SINGLE_CHOICE
-      - RANKER_INSTRUCTION_MATH
-    Fallback tail asks for top-2 indices like [1,2].
+    Build the ranking prompt for the listwise ranker.
+    qtype in {"single_choice", "math_exp"}.
     """
-    if qtype not in ("single_choice", "math_exp"):
+    if qtype == "single_choice":
+        prefix_string = (
+            "Here is the question:\n"
+            + question
+            + "\n\nThese are the solutions to the problem from other agents: "
+        )
+    elif qtype == "math_exp":
+        prefix_string = (
+            "Follow the given examples and answer the mathematics problem.\n\n"
+            + question
+            + "\n\nThese are the solutions to the problem from other agents: "
+        )
+    else:
         raise ValueError("Question type is incorrect.", qtype)
 
-    if qtype == "single_choice":
-        prefix = "Here is the question:\n" + question + "\n\nThese are the solutions to the problem from other agents: "
-        tail = _PROFILE.get(
-            "RANKER_INSTRUCTION_SINGLE_CHOICE",
-            "\n\nPlease choose the best 2 solutions and think step by step. Put your answer in the form like [1,2] or [3,4] at the end of your response."
-        )
-    else:  # math_exp
-        prefix = "Follow the given examples and answer the mathematics problem.\n\n" + question + "\n\nThese are the solutions to the problem from other agents: "
-        tail = _PROFILE.get(
-            "RANKER_INSTRUCTION_MATH",
-            "\n\nPlease choose the best 2 solutions and think step by step. Put your answer in the form like [1,2] or [3,4] at the end of your response."
-        )
-
-    body = ""
     for aid, aresponse in enumerate(responses, 1):
-        body += "\n\nAgent solution " + str(aid) + ": ```{}```".format(aresponse)
+        response = f"\n\nAgent solution {aid}: ```{aresponse}```"
+        prefix_string += response
 
-    return {"role": "user", "content": prefix + body + tail}
+    # Tail instructions, overridable via PROMPT_PROFILE
+    default_tail = (
+        "\n\nPlease choose the best 2 solutions and think step by step. "
+        "Put your answer in the form like [1,2] or [3,4] at the end of your response."
+    )
+    key = "RANKER_INSTRUCTION_SINGLE_CHOICE" if qtype == "single_choice" else "RANKER_INSTRUCTION_MATH"
+    tail = _PROFILE.get(key, default_tail)
+    prefix_string += tail
+
+    return {"role": "user", "content": prefix_string}
 
 
 def construct_message(responses, question, qtype):
     """
-    Build the user message for an *agent* at a later step who sees peer solutions.
-    Supports an optional RATIONALE=1 mode to prepend one-sentence rationales when scoring peers.
-    Uses profile keys:
-      - AGENT_INTERACTION_SINGLE_CHOICE
-      - AGENT_INTERACTION_MATH
+    Build the interaction message for an agent that sees other agents' responses.
+
+    qtype:
+      - "single_choice": MMLU-style 4-option MCQ
+      - "math_exp": open-ended math explanation + final answer
     """
+    import os
+
     use_rationale = os.getenv("RATIONALE", "0") == "1"
-    rationale_prompt = "**For each agent's solution, provide a one-sentence rationale for the assigned score before you provide the scores.**\n"
-
-    if qtype not in ("single_choice", "math_exp"):
-        raise ValueError("Question type is incorrect.", qtype)
-
-    if qtype == "single_choice":
-        if len(responses) == 0:
-            prefix = "Here is the question:\n" + question + "\n\nPut your answer in the form (X) at the end of your response. (X) represents choice (A), (B), (C), or (D)."
-            return {"role": "user", "content": prefix}
-
-        prefix = "Here is the question:\n" + question + "\n\nThese are the solutions to the problem from other agents: "
-        for aid, aresponse in enumerate(responses, 1):
-            prefix += "\n\nAgent solution " + str(aid) + ": ```{}```".format(aresponse)
-
-        base = _PROFILE.get("AGENT_INTERACTION_SINGLE_CHOICE",
-                            "\n\nUsing the reasoning from other agents as additional advice with critical thinking, can you give an updated answer? Examine your solution and that other agents step by step. Notice that their answers might be all wrong. Put your answer in the form (X) at the end of your response. (X) represents choice (A), (B), (C), or (D). Along with the answer, give a score ranged from 1 to 5 to the solutions of other agents. Put all {} scores in the form like [[1, 5, 2, ...]].")
-        instruction = base.format(len(responses))
-        if use_rationale:
-            instruction = instruction + " " + rationale_prompt
-        return {"role": "user", "content": prefix + instruction}
-
-    else:  # math_exp
-        if len(responses) == 0:
-            return {"role": "user", "content": question}
-
-        prefix = "Follow the given examples and answer the mathematics problem.\n\n" + question + "\n\nThese are the solutions to the problem from other agents: "
-        for aid, aresponse in enumerate(responses, 1):
-            prefix += "\n\nAgent solution " + str(aid) + ": ```{}```".format(aresponse)
-
-        base = _PROFILE.get("AGENT_INTERACTION_MATH",
-                            "\n\nUsing the reasoning from other agents as additional advice with critical thinking, can you give an updated answer? Examine your solution and that other agents step by step. Notice that their answers might be all wrong. Along with the answer, give a score ranged from 1 to 5 to the solutions of other agents. Put all {} scores in the form like [[1, 5, 2, ...]].")
-        instruction = base.format(len(responses))
-        if use_rationale:
-            instruction = instruction + " " + rationale_prompt
-        return {"role": "user", "content": prefix + instruction}
-
-
-# -------------------------------
-# JSON-only judge for k candidates (soft weights)
-# -------------------------------
-
-def construct_weight_judge_message(responses, question, qtype):
-    """
-    Build a JSON-only judging prompt that asks the LLM to return a weight vector
-    [w1, w2, ..., wk] for k >= 2 candidate solutions, where all wi >= 0 and sum to 1.
-    The order must match the listing below. The caller may shuffle BEFORE calling.
-    """
-    assert isinstance(responses, list) and len(responses) >= 2, "Need at least two responses"
-
-    if qtype == "single_choice":
-        header = "Here is the question:\n" + question + "\n\nBelow are candidate solutions from k agents."
-    elif qtype == "math_exp":
-        header = "Follow the given examples and answer the mathematics problem.\n\n" + question + "\n\nBelow are candidate solutions from k agents."
-    else:
-        header = "Task description:\n" + question + "\n\nBelow are candidate solutions from k agents."
-
-    blocks = []
-    for i, text in enumerate(responses, start=1):
-        blocks.append(f"\n\nCandidate {i}:\n```{str(text)}```")
-    body = "".join(blocks)
-
-    instructions = (
-        "\n\nAct as an impartial judge. Compare the **quality of reasoning** of the candidates "
-        "for correctness, completeness, and clarity. Output **only** a JSON array of k non‑negative "
-        "numbers that **sum to 1**, representing how much credit each solution deserves: "
-        "[w1, w2, ..., wk].\n"
-        "Return **only** the JSON array — no prose, no code fences, no explanation."
+    rationale_prompt = (
+        "**For each agent's solution, provide a one-sentence rationale for the "
+        "assigned score before you provide the scores.**\n"
     )
 
-    messages = [
-        {"role": "system", "content": "You are a strict grading judge who outputs JSON only."},
-        {"role": "user", "content": header + body + instructions},
-    ]
-    return messages
+    if qtype == "single_choice":
+        if len(responses) == 0:
+            prefix_string = (
+                "Here is the question:\n"
+                + question
+                + "\n\nPut your answer in the form (X) at the end of your response. "
+                "(X) represents choice (A), (B), (C), or (D)."
+            )
+            return {"role": "user", "content": prefix_string}
+
+        prefix_string = (
+            "Here is the question:\n"
+            + question
+            + "\n\nThese are the solutions to the problem from other agents: "
+        )
+
+        for aid, aresponse in enumerate(responses, 1):
+            response = f"\n\nAgent solution {aid}: ```{aresponse}```"
+            prefix_string += response
+
+        default_instruction = (
+            "\n\nUsing the reasoning from other agents as additional advice with critical "
+            "thinking, can you give an updated answer? Examine your solution and the others "
+            "step by step. Notice that the other answers might be wrong. Put your answer in "
+            "the form (X) at the end. (X) represents choice (A), (B), (C), or (D). Along with "
+            "the answer, give a score ranged from 1 to 5 to the solutions of other agents. "
+            "Put all {0} scores in the form like [[1, 5, 2, ...]]."
+        )
+        base = _PROFILE.get("AGENT_INTERACTION_SINGLE_CHOICE", default_instruction)
+        instruction = base.format(len(responses))
+
+        if use_rationale:
+            instruction += " " + rationale_prompt
+
+        prefix_string += instruction
+
+    elif qtype == "math_exp":
+        if len(responses) == 0:
+            # For math_exp, the question already carries instructions / examples.
+            return {"role": "user", "content": question}
+
+        prefix_string = (
+            "Follow the given examples and answer the mathematics problem.\n\n"
+            + question
+            + "\n\nThese are the solutions to the problem from other agents: "
+        )
+
+        for aid, aresponse in enumerate(responses, 1):
+            response = f"\n\nAgent solution {aid}: ```{aresponse}```"
+            prefix_string += response
+
+        default_instruction = (
+            "\n\nUsing the reasoning from other agents as additional advice with critical "
+            "thinking, can you give an updated answer? Examine your solution and that other "
+            "agents step by step. Notice that their answers might be all wrong. Along with "
+            "the answer, give a score ranged from 1 to 5 to the solutions of other agents. "
+            "Put all {0} scores in the form like [[1, 5, 2, ...]]."
+        )
+        base = _PROFILE.get("AGENT_INTERACTION_MATH", default_instruction)
+        instruction = base.format(len(responses))
+
+        if use_rationale:
+            instruction += " " + rationale_prompt
+
+        prefix_string += instruction
+
+    else:
+        raise ValueError("Question type is incorrect.", qtype)
+
+    return {"role": "user", "content": prefix_string}
 
 
 # -------------------------------
-# Math examples (unchanged)
+# Complex CoT examples (for math)
 # -------------------------------
+
 COMPLEX_COT_EXAMPLES = r"""Problem: Kevin Kangaroo begins hopping on a number line at 0. He wants to get to 1, but he can hop only $\frac{1}{3}$ of the distance. Each hop tires him out so that he continues to hop $\frac{1}{3}$ of the remaining distance. How far has he hopped after five hops? Express your answer as a common fraction.
 Answer: Let's think step by step
 Kevin hops $1/3$ of the remaining distance with every hop.
@@ -307,3 +316,47 @@ So, one solution is $x=0$ and the other two solutions are the solutions to $x^2 
 We could either factor the quadratic, or note that the sum of the solutions to this quadratic is $-(3/1)=-3$,
 so the mean of the three solutions to the original equation is $-3/3=\boxed{-1}$.
 The answer is -1"""
+
+# -------------------------------
+# JSON-only judge for k candidates (soft weights)
+# -------------------------------
+
+def construct_weight_judge_message(responses, question, qtype):
+    """
+    Build a JSON-only judging prompt that asks the LLM to return a weight vector
+    [w1, w2, ..., wk] for k >= 2 candidate solutions, where all wi >= 0 and sum to 1.
+
+    The order of weights must follow the order in which the candidates are listed below.
+    NOTE: This function does NOT shuffle; shuffling is done by the caller for bias-avoidance.
+    """
+    assert isinstance(responses, list) and len(responses) >= 2, "Need at least two responses"
+
+    if qtype == "single_choice":
+        header = "Here is the question:\n" + question + "\n\nBelow are candidate solutions from k agents."
+    elif qtype == "math_exp":
+        header = (
+            "Follow the given examples and answer the mathematics problem.\n\n"
+            + question
+            + "\n\nBelow are candidate solutions from k agents."
+        )
+    else:
+        header = "Task description:\n" + question + "\n\nBelow are candidate solutions from k agents."
+
+    blocks = []
+    for i, text in enumerate(responses, start=1):
+        blocks.append(f"\n\nCandidate {i}:\n```{str(text)}```")
+    body = "".join(blocks)
+
+    instructions = (
+        "\n\nAct as an impartial judge. Compare the **quality of reasoning** of the candidates "
+        "for correctness, completeness, and clarity. Output **only** a JSON array of k non‑negative "
+        "numbers that **sum to 1**, representing how much credit each solution deserves: "
+        "[w1, w2, ..., wk].\n"
+        "Return **only** the JSON array — no prose, no code fences, no explanation."
+    )
+
+    messages = [
+        {"role": "system", "content": "You are a strict grading judge who outputs JSON only."},
+        {"role": "user", "content": header + body + instructions},
+    ]
+    return messages
