@@ -138,3 +138,17 @@ else:
     print("No valid results to aggregate.")
 EOF
 fi
+
+# ------------------------------------------------------------
+# Optional: Compute bootstrap CI metrics
+# ------------------------------------------------------------
+if [[ "${COMPUTE_METRICS:-1}" == "1" ]]; then
+  echo ""
+  echo "=========================================="
+  echo "Computing bootstrap confidence intervals..."
+  echo "=========================================="
+  python "$SCRIPT_DIR/compute_baseline_metrics.py" \
+    "$OUT_DIR" \
+    "$MODEL" \
+    "${N_BOOT:-1000}"
+fi

@@ -14,6 +14,11 @@ MAX_PARALLEL="${MAX_PARALLEL:-4}"
 NUM_ROLES="${NUM_ROLES:-4}"   # roles selected per question in evaluation
 N_BOOT="${N_BOOT:-1000}"      # bootstrap replicates for CI
 
+# MMR diversity parameters (NEW)
+LAMBDA="${LAMBDA:-1.0}"       # MMR trade-off: 1.0=pure importance, 0.0=pure diversity
+EMBEDDINGS="${EMBEDDINGS:-$SCRIPT_DIR/embeddings_agent_subject.pkl}"  # embeddings file
+USE_MMR="${USE_MMR:-auto}"    # auto, true, or false
+
 # Default paths
 IMPORTANCE_CSV="${IMPORTANCE_CSV:-importance_1to7.csv}"
 EVAL_DATASET="${EVAL_DATASET:-$SCRIPT_DIR/../../data/MMLU/evaluation}"
@@ -34,14 +39,41 @@ OPTIONS:
     -n, --num-roles NUM            Number of roles to select per question for evaluation (default: 4)
     -p, --max-parallel NUM         Maximum parallel jobs (default: 4)
     --n-boot NUM                   Bootstrap replicates for CI (default: 1000)
+
+    MMR DIVERSITY OPTIONS (NEW):
+    --lambda LAMBDA                MMR trade-off parameter (default: 1.0)
+                                   1.0 = pure importance (greedy, current behavior)
+                                   0.7-0.8 = slight diversity preference (recommended)
+                                   0.5 = equal weight to importance and diversity
+                                   0.0 = pure diversity
+    --embeddings FILE              Path to embeddings file (default: embeddings_agent_subject.pkl)
+    --use-mmr [auto|true|false]    Enable MMR selection (default: auto)
+                                   auto = use MMR if lambda < 1.0 and embeddings exist
+                                   true = require MMR (fail if embeddings missing)
+                                   false = always use greedy selection
+
     -h, --help                     Show help
 
 EXAMPLES:
+    # Current behavior (greedy selection by importance)
     $0
+
+    # Balanced importance and diversity
+    $0 --lambda 0.7
+
+    # Equal weight to importance and diversity
+    $0 --lambda 0.5 --num-roles 4
+
+    # Pure diversity (experimental)
+    $0 --lambda 0.0
+
+    # Use custom embeddings file
+    $0 --lambda 0.7 --embeddings my_embeddings.pkl
+
+    # Other options
     $0 --model "gpt-4" --dataset "/path/to/eval"
-    $0 --num-roles 3
-    $0 --importance-csv custom_importance.csv
-    N_BOOT=2000 $0                        # change # bootstrap reps
+    $0 --num-roles 3 --lambda 0.8
+    N_BOOT=2000 $0 --lambda 0.7              # change # bootstrap reps
 EOF
 }
 
@@ -56,6 +88,9 @@ while [[ $# -gt 0 ]]; do
         -n|--num-roles) NUM_ROLES="$2"; shift 2;;
         -p|--max-parallel) MAX_PARALLEL="$2"; shift 2;;
         --n-boot) N_BOOT="$2"; shift 2;;
+        --lambda) LAMBDA="$2"; shift 2;;
+        --embeddings) EMBEDDINGS="$2"; shift 2;;
+        --use-mmr) USE_MMR="$2"; shift 2;;
         -h|--help) usage; exit 0;;
         *) echo "Unknown option: $1" >&2; usage; exit 1;;
     esac
@@ -74,6 +109,21 @@ if [[ ! "$NUM_ROLES" =~ ^[1-7]$ ]]; then
     exit 1
 fi
 
+# Determine MMR usage
+ACTUAL_MMR="false"
+if [[ "$USE_MMR" == "true" ]]; then
+    if [[ ! -f "$EMBEDDINGS" ]]; then
+        log "ERROR: MMR requested but embeddings file not found: $EMBEDDINGS"
+        exit 1
+    fi
+    ACTUAL_MMR="true"
+elif [[ "$USE_MMR" == "auto" ]]; then
+    # Use MMR if lambda < 1.0 and embeddings exist
+    if (( $(echo "$LAMBDA < 1.0" | bc -l) )) && [[ -f "$EMBEDDINGS" ]]; then
+        ACTUAL_MMR="true"
+    fi
+fi
+
 log "Starting DyLAN MMLU Evaluation"
 log "Model: $MODEL"
 log "Importance CSV: $IMPORTANCE_CSV"
@@ -82,6 +132,12 @@ log "Output: $OUTPUT_DIR"
 log "Roles per question: $NUM_ROLES"
 log "Max parallel jobs: $MAX_PARALLEL"
 log "Bootstrap reps (95% CI): $N_BOOT"
+log "---"
+log "MMR Selection: $ACTUAL_MMR"
+if [[ "$ACTUAL_MMR" == "true" ]]; then
+    log "Lambda (importance weight): $LAMBDA"
+    log "Embeddings file: $EMBEDDINGS"
+fi
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -196,9 +252,42 @@ def meta_for_subject(subject: str) -> str:
     return "other (business, health, misc.)"
 
 # ---------------------------
-# Role selection
+# Role selection (with optional MMR)
 # ---------------------------
-def select_top_roles(importance_csv: str, num_roles: int = 4) -> Tuple[Dict[str, List[str]], List[str], pd.DataFrame]:
+def select_top_roles(importance_csv: str, num_roles: int = 4, use_mmr: bool = False,
+                     lambda_param: float = 1.0, embeddings_pkl: str = None) -> Tuple[Dict[str, List[str]], List[str], pd.DataFrame]:
+    """
+    Select top roles for each test, optionally using MMR for diversity.
+
+    Args:
+        importance_csv: Path to importance CSV
+        num_roles: Number of roles to select
+        use_mmr: Whether to use MMR selection
+        lambda_param: MMR trade-off (1.0=importance, 0.0=diversity)
+        embeddings_pkl: Path to embeddings file (required if use_mmr=True)
+    """
+    if use_mmr and embeddings_pkl:
+        # Use MMR selection from mmr_selection module
+        import sys
+        # This script is in the output directory, look in parent directory for mmr_selection.py
+        script_dir = os.path.dirname(__file__)
+        parent_dir = os.path.dirname(script_dir)
+        mmr_module_path = os.path.join(parent_dir, 'mmr_selection.py')
+        if not os.path.exists(mmr_module_path):
+            print(f"Warning: mmr_selection.py not found at {mmr_module_path}, falling back to greedy selection")
+            use_mmr = False
+        else:
+            # Import select_agents_for_all_tests from mmr_selection
+            sys.path.insert(0, parent_dir)
+            try:
+                from mmr_selection import select_agents_for_all_tests
+                print(f"Using MMR selection (lambda={lambda_param})")
+                return select_agents_for_all_tests(importance_csv, embeddings_pkl, num_roles, lambda_param)
+            except Exception as e:
+                print(f"Warning: MMR selection failed ({e}), falling back to greedy")
+                use_mmr = False
+
+    # Greedy selection (original behavior)
     df = pd.read_csv(importance_csv)
     role_cols = [c for c in df.columns if c.endswith('_imp')]
     role_names = [c.replace('_imp', '') for c in role_cols]
@@ -455,8 +544,8 @@ def print_block(title: str, res: dict, mark_est_tokens: bool = False):
         print("Tokens out           : N/A")
 
 def main():
-    if len(sys.argv) not in (7, 8):
-        print("Usage: evaluate_roles.py <importance_csv> <dataset_dir> <model> <num_roles> <output_dir> <max_parallel> <n_boot>")
+    if len(sys.argv) not in (7, 8, 10, 11):
+        print("Usage: evaluate_roles.py <importance_csv> <dataset_dir> <model> <num_roles> <output_dir> <max_parallel> [<n_boot>] [<use_mmr> <lambda> <embeddings_pkl>]")
         sys.exit(1)
     importance_csv = sys.argv[1]
     dataset_dir   = sys.argv[2]
@@ -464,10 +553,21 @@ def main():
     num_roles     = int(sys.argv[4])
     output_dir    = sys.argv[5]
     max_parallel  = int(sys.argv[6])
-    n_boot        = int(sys.argv[7]) if len(sys.argv) == 8 else 1000
+    n_boot        = int(sys.argv[7]) if len(sys.argv) >= 8 else 1000
+
+    # MMR parameters (if provided)
+    use_mmr = False
+    lambda_param = 1.0
+    embeddings_pkl = None
+    if len(sys.argv) >= 11:
+        use_mmr = sys.argv[8].lower() == 'true'
+        lambda_param = float(sys.argv[9])
+        embeddings_pkl = sys.argv[10]
 
     print(f"Loading importance data from: {importance_csv}")
-    selected_roles, all_roles, df_imp = select_top_roles(importance_csv, num_roles)
+    selected_roles, all_roles, df_imp = select_top_roles(
+        importance_csv, num_roles, use_mmr, lambda_param, embeddings_pkl
+    )
     print(f"Found importance data for {len(selected_roles)} tests")
     print(f"Selected {num_roles} roles per test from: {all_roles}")
 
@@ -506,6 +606,13 @@ def main():
 
     post_df = collect_post_metrics(result_files)
     pre_df  = collect_pre_metrics(importance_csv)
+
+    # Check if we have any results
+    if post_df.empty:
+        print("\n⚠️  ERROR: No evaluation results collected!")
+        print("   All evaluations failed or were skipped.")
+        print("   Check the error messages above for details.")
+        sys.exit(1)
 
     # Align sets by subject where needed
     # (We compute global response ratio using all available rows.)
@@ -577,14 +684,30 @@ chmod +x "$OUTPUT_DIR/evaluate_roles.py"
 # Run evaluation + metrics (with bootstrap)
 # ---------------------------------------------------------------------
 log "Running evaluation with $NUM_ROLES roles per question..."
-python "$OUTPUT_DIR/evaluate_roles.py" \
-    "$IMPORTANCE_CSV" \
-    "$EVAL_DATASET" \
-    "$MODEL" \
-    "$NUM_ROLES" \
-    "$OUTPUT_DIR" \
-    "$MAX_PARALLEL" \
-    "$N_BOOT"
+
+# Build python command with optional MMR parameters
+if [[ "$ACTUAL_MMR" == "true" ]]; then
+    python "$OUTPUT_DIR/evaluate_roles.py" \
+        "$IMPORTANCE_CSV" \
+        "$EVAL_DATASET" \
+        "$MODEL" \
+        "$NUM_ROLES" \
+        "$OUTPUT_DIR" \
+        "$MAX_PARALLEL" \
+        "$N_BOOT" \
+        "$ACTUAL_MMR" \
+        "$LAMBDA" \
+        "$EMBEDDINGS"
+else
+    python "$OUTPUT_DIR/evaluate_roles.py" \
+        "$IMPORTANCE_CSV" \
+        "$EVAL_DATASET" \
+        "$MODEL" \
+        "$NUM_ROLES" \
+        "$OUTPUT_DIR" \
+        "$MAX_PARALLEL" \
+        "$N_BOOT"
+fi
 
 log "Evaluation completed!"
 log "Results saved in: $OUTPUT_DIR"
