@@ -27,7 +27,7 @@ Search algorithm: simple hill-climbing
    and repeat; otherwise stop early.
 6. Write the best profile to --out_profile.
 
-Usage (from repo root, as you were doing):
+Usage (from repo root):
 
   python code/MMLU/prompt_agent.py \
     --train_dir "$(pwd)/data/MMLU/small_team_selection" \
@@ -36,7 +36,7 @@ Usage (from repo root, as you were doing):
     --base_profile "$(pwd)/code/MMLU/profiles/base_profile.json" \
     --out_profile "$(pwd)/code/MMLU/fine_tuned_prompts/best_profile.json" \
     --exp_name "fine_tuned_prompts" \
-    --iters 6
+    --iters 3
 
 Then:
 
@@ -47,10 +47,9 @@ Then:
 
 Meta-LLM configuration
 ----------------------
-We use the `openai` Python client, which also works with Together if you set
-the base URL. The client is created with:
+We use the `together` Python client. The client is created with:
 
-  api_key = PROMPTAGENT_API_KEY or TOGETHER_API_KEY or OPENAI_API_KEY
+  api_key = PROMPTAGENT_API_KEY or TOGETHER_API_KEY
   base_url = PROMPTAGENT_API_BASE or TOGETHER_BASE_URL (optional)
 
 Meta model:
@@ -64,7 +63,6 @@ So for Together:
   export MODEL=openai/gpt-oss-20b
   # Optional but recommended:
   export PROMPTAGENT_META_MODEL=openai/gpt-oss-20b   # or a smaller model
-
 """
 
 import argparse
@@ -90,13 +88,13 @@ except ImportError:  # pragma: no cover
 # -------------------------------
 
 def objective(
-        acc: float,
-        n_q: int,
-        api_calls_total: int,
-        prompt_toks: int,
-        compl_toks: int,
-        alpha_api: float,
-        beta_tok: float,
+    acc: float,
+    n_q: int,
+    api_calls_total: int,
+    prompt_toks: int,
+    compl_toks: int,
+    alpha_api: float,
+    beta_tok: float,
 ) -> float:
     """
     Compute score with accuracy dominating and small penalties for API calls / tokens.
@@ -245,13 +243,13 @@ def _parse_result_log(log_path: Path) -> LogMetrics:
 # -------------------------------
 
 def _eval_one_csv(
-        scripts_dir: Path,
-        csv_path: Path,
-        model: str,
-        exp_name: str,
-        roles: List[str],
-        out_root: Path,
-        env: Dict[str, str],
+    scripts_dir: Path,
+    csv_path: Path,
+    model: str,
+    exp_name: str,
+    roles: List[str],
+    out_root: Path,
+    env: Dict[str, str],
 ) -> Tuple[LogMetrics, Path]:
     """
     Run one subject CSV with llmlp_listwise_mmlu.py and parse its log.
@@ -319,9 +317,9 @@ class ErrorExample:
 
 
 def _extract_errors_from_subject(
-        csv_path: Path,
-        metrics: LogMetrics,
-        max_errors: int,
+    csv_path: Path,
+    metrics: LogMetrics,
+    max_errors: int,
 ) -> List[ErrorExample]:
     """
     Convert wrong answers for a given subject into ErrorExample objects.
@@ -386,17 +384,17 @@ class EvalSummary:
 
 
 def evaluate_profile(
-        train_dir: Path,
-        scripts_dir: Path,
-        model: str,
-        roles: List[str],
-        out_root: Path,
-        exp_name: str,
-        seed: int,
-        alpha_api: float,
-        beta_tok: float,
-        env: Dict[str, str],
-        max_errors: int = 32,
+    train_dir: Path,
+    scripts_dir: Path,
+    model: str,
+    roles: List[str],
+    out_root: Path,
+    exp_name: str,
+    seed: int,
+    alpha_api: float,
+    beta_tok: float,
+    env: Dict[str, str],
+    max_errors: int = 32,
 ) -> Tuple[EvalSummary, float, List[ErrorExample]]:
     """
     Evaluate a profile on all CSVs in train_dir.
@@ -473,14 +471,6 @@ def _save_profile(p: Dict[str, Any], path: Path) -> None:
 # Meta-LLM: prompt optimizer
 # -------------------------------
 
-# -------------------------------
-# Meta-LLM: prompt optimizer
-# -------------------------------
-
-# -------------------------------
-# Meta-LLM: prompt optimizer
-# -------------------------------
-
 def _make_meta_client() -> Any:
     """
     Build a Together client for meta-LLM prompt optimization.
@@ -488,9 +478,6 @@ def _make_meta_client() -> Any:
     Priority for API key:
       1) PROMPTAGENT_API_KEY
       2) TOGETHER_API_KEY
-
-    (Together reads TOGETHER_API_KEY from the environment, but we also pass it
-    explicitly so failures are clearer.)
     """
     if Together is None:
         raise RuntimeError(
@@ -506,15 +493,12 @@ def _make_meta_client() -> Any:
 
     base_url = os.getenv("PROMPTAGENT_API_BASE") or os.getenv("TOGETHER_BASE_URL")
 
-    # Together 1.x can use TOGETHER_API_KEY from env; we also pass it explicitly.
-    # Some versions may not support base_url; fall back gracefully.
     try:
         if base_url:
             client = Together(api_key=api_key, base_url=base_url)  # type: ignore[arg-type]
         else:
             client = Together(api_key=api_key)  # type: ignore[arg-type]
     except TypeError:
-        # Older versions might not accept base_url.
         client = Together(api_key=api_key)  # type: ignore[arg-type]
 
     return client
@@ -525,7 +509,10 @@ def _format_errors_for_llm(errors: List[ErrorExample], max_examples: int = 12) -
     Turn a small list of ErrorExample into a readable block for the meta-LLM.
     """
     if not errors:
-        return "No explicit error examples are available; please improve the prompts in general."
+        return (
+            "No explicit error examples are available; please improve the prompts "
+            "in general for multi-agent MMLU question answering."
+        )
 
     lines: List[str] = []
     for e in errors[:max_examples]:
@@ -542,12 +529,12 @@ def _format_errors_for_llm(errors: List[ErrorExample], max_examples: int = 12) -
 
 
 def _propose_profiles_with_meta_llm(
-        current_profile: Dict[str, Any],
-        errors: List[ErrorExample],
-        num_samples: int,
-        meta_model: str,
-        client: Any,
-        temperature: float = 0.7,
+    current_profile: Dict[str, Any],
+    errors: List[ErrorExample],
+    num_samples: int,
+    meta_model: str,
+    client: Any,
+    temperature: float = 0.7,
 ) -> List[Dict[str, Any]]:
     """
     Call the meta-LLM once to get a small set of new profile JSONs.
@@ -604,9 +591,23 @@ No explanations, no markdown, no backticks.
         max_tokens=2048,
     )
 
-    content = resp.choices[0].message.content.strip()
+    # Defensive extraction in case Together returns unexpected structures
+    choice0 = None
+    if hasattr(resp, "choices") and resp.choices:
+        choice0 = resp.choices[0]
+    msg = getattr(choice0, "message", None) if choice0 is not None else None
+    content = (getattr(msg, "content", None) or "").strip()
 
-    # Try to parse as JSON array; be forgiving about extra text.
+    if not content:
+        # Gracefully degrade instead of crashing
+        print(
+            "[PromptAgent] WARNING: meta-LLM returned empty content; "
+            "no neighbors will be proposed for this iteration.",
+            file=sys.stderr,
+        )
+        return []
+
+    # Try to parse as JSON array; be forgiving about extra wrapper text.
     def _parse_json_array(s: str) -> Any:
         try:
             return json.loads(s)
@@ -620,7 +621,9 @@ No explanations, no markdown, no backticks.
     try:
         data = _parse_json_array(content)
     except Exception as e:
-        raise RuntimeError(f"Meta-LLM did not return valid JSON: {e}\nRaw content:\n{content}")
+        raise RuntimeError(
+            f"Meta-LLM did not return valid JSON: {e}\nRaw content:\n{content}"
+        )
 
     if isinstance(data, dict):
         candidates_raw = [data]
@@ -644,19 +647,19 @@ No explanations, no markdown, no backticks.
 # -------------------------------
 
 def optimize(
-        train_dir: Path,
-        scripts_dir: Path,
-        model: str,
-        roles: List[str],
-        base_profile_path: Path,
-        out_profile_path: Path,
-        out_runs_dir: Path,
-        exp_name: str,
-        iters: int,
-        seed: int,
-        alpha_api: float,
-        beta_tok: float,
-        env: Dict[str, str],
+    train_dir: Path,
+    scripts_dir: Path,
+    model: str,
+    roles: List[str],
+    base_profile_path: Path,
+    out_profile_path: Path,
+    out_runs_dir: Path,
+    exp_name: str,
+    iters: int,
+    seed: int,
+    alpha_api: float,
+    beta_tok: float,
+    env: Dict[str, str],
 ) -> Dict[str, Any]:
     """
     Simple hill-climbing over JSON prompt profiles using a meta-LLM.
@@ -728,6 +731,13 @@ def optimize(
         )
 
         if not neighbors:
+            # Either meta-LLM returned empty / invalid, or no errors;
+            # treat as local optimum and stop gracefully.
+            print(
+            f"[PromptAgent] No neighbor profiles proposed at iteration {t}; "
+            "ending hill-climb.",
+            file=sys.stderr,
+        )
             break
 
         improved = False
@@ -765,6 +775,11 @@ def optimize(
 
         if not improved:
             # Local optimum reached
+            print(
+                f"[PromptAgent] No improvement at iteration {t}; "
+                f"best score stays {best['score']:.4f}.",
+                file=sys.stderr,
+            )
             break
 
     # 3) Write the winner
@@ -796,7 +811,7 @@ def main():
     ap.add_argument("--base_profile", type=str, required=True)
     ap.add_argument("--out_profile", type=str, required=True)
     ap.add_argument("--exp_name", type=str, default="promptagent")
-    ap.add_argument("--iters", type=int, default=6, help="Number of hill-climb steps.")
+    ap.add_argument("--iters", type=int, default=3, help="Number of hill-climb steps.")
     ap.add_argument("--seed", type=int, default=73)
     ap.add_argument(
         "--roles",
