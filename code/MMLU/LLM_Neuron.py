@@ -65,11 +65,25 @@ class LLMNeuron:
         self.prompt_tokens = 0
         self.completion_tokens = 0
 
-    def activate(self, question):
+    def activate(self, question, memory_bank=None):
         self.question = question
         self.active = True
         # get context and genrate reply
         contexts, formers = self.get_context()
+        
+        if memory_bank is not None:
+            try:
+                memories = memory_bank.search(
+                    question,
+                    top_k=5,
+                    owner=self.role 
+                )
+                if memories:
+                    memory_text = "\n".join([f"- {m.text}" for m in memories])
+                    contexts[0]["content"] += f"\n\nRelevant memories from past {self.role} experiences:\n{memory_text}"
+            except Exception as e:
+                print(f"Warning: Memory bank search failed: {e}")
+        
         # print("formers: ", formers)
         # shuffle
         original_idxs = [mess[1] for mess in formers]
