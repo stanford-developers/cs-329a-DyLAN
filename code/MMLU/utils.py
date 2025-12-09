@@ -240,33 +240,59 @@ def get_math_qa_pairs(sub_dir, min_file, max_file):
         a = _strip_string(a)
         return a
 
-    def parse_single_qa_math(subdir, file):
-        with open(os.path.join(subdir, file), 'r') as fp:
-            try:
-                problem_data = json.load(fp)
-            except Exception as e:
-                print(f"Error loading JSON from {file}", e)
-                raise e
-            prob_content = problem_data["problem"]
-            question = COMPLEX_COT_EXAMPLES + "\n\nPlease solve the problem below.\nProblem: " + prob_content + "\nAnswer:"
-            prob_level = problem_data["level"]
-            prob_type = problem_data["type"]
-            try:
-                prob_level = int(prob_level.split("Level ")[1])
-            except:
-                prob_level = None
+    # in code/MMLU/utils.py
 
-            # answer = remove_boxed(last_boxed_only_string(problem_data["solution"]))
-            answer = find_math_answer(problem_data['solution'])
+    from pathlib import Path
+    import json
 
-            return question, prob_level, prob_type, answer
+    def parse_single_qa_math(subdir, file_id):
+        """
+        Load a single MATH problem from JSON.
+
+        Supports both:
+          - original MATH-style JSON: { "problem", "solution", "level", "type" }
+          - our csv->json style:      { "question", "answer", "level", "type" }
+        """
+        # file_id may be an int (1) or a string ("0001")
+        if isinstance(file_id, int):
+            fname = f"{file_id:04d}.json"
+        else:
+            # assume it's already the basename without extension (e.g. "0001")
+            fname = f"{str(file_id).zfill(4)}.json"
+
+        path = Path(subdir) / fname
+        with path.open("r", encoding="utf-8") as f:
+            problem_data = json.load(f)
+
+        # Question text
+        if "problem" in problem_data:
+            question = problem_data["problem"]
+        elif "question" in problem_data:
+            question = problem_data["question"]
+        else:
+            raise KeyError(f"{path}: missing 'problem' / 'question' key")
+
+        # Gold answer
+        if "solution" in problem_data:
+            answer = problem_data["solution"]
+        elif "answer" in problem_data:
+            answer = problem_data["answer"]
+        else:
+            raise KeyError(f"{path}: missing 'solution' / 'answer' key")
+
+        # Level and type (these exist in your JSON already)
+        level = problem_data.get("level", "")
+        typ = problem_data.get("type", "")
+
+        return question, level, typ, answer
 
     ret_list = []
     for subdir, dirs, files in os.walk(sub_dir):
         for file in files:
-            file_num = int(os.path.splitext(file)[0])  # Get the filename without extension and convert to int
+            file_num = int(os.path.splitext(file)[0])  # "0009.json" -> 9
             if min_file <= file_num <= max_file:
-                question, prob_level, prob_type, answer = parse_single_qa_math(subdir, file)
+                # pass the numeric id so parse_single_qa_math builds "0009.json"
+                question, prob_level, prob_type, answer = parse_single_qa_math(subdir, file_num)
             else:
                 continue
             ret_list.append((question, answer))
