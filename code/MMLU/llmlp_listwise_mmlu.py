@@ -38,7 +38,9 @@ DIR_NAME = DIR_NAME + '_' + '_'.join(ROLES)
 
 # 【Memory Bank配置】通过环境变量控制是否启用
 USE_MEMORY_BANK = os.getenv("USE_MEMORY_BANK", "0") == "1"
+MEMORY_MODE = os.getenv("MEMORY_MODE", "train")  # "train" or "eval"
 MEMORY_IMPORTANCE_THRESHOLD = float(os.getenv("MEMORY_IMPORTANCE_THRESHOLD", "0.3"))
+MEMORY_BANK_PATH = os.getenv("MEMORY_BANK_PATH", None)  # Optional: path to pre-trained memory bank
 
 
 def set_rd_seed(seed):
@@ -90,19 +92,40 @@ def main():
     memory_manager = None
     if USE_MEMORY_BANK and MEMORY_BANK_AVAILABLE:
         memory_bank = MemoryBank()
-        memory_manager = MemoryManager(memory_bank, model=MODEL)
-        # Try to load existing memories if available
-        memory_file = os.path.join(DIR_NAME, "memory_bank.json")
-        if os.path.exists(memory_file):
+        
+        # Load memory bank from specified path or local directory
+        memory_file = None
+        if MEMORY_BANK_PATH and os.path.exists(MEMORY_BANK_PATH):
+            # Use specified memory bank (for evaluation)
+            memory_file = MEMORY_BANK_PATH
+            print(f"Loading memory bank from: {memory_file}")
+        else:
+            # Use local memory bank (for training)
+            memory_file = os.path.join(DIR_NAME, "memory_bank.json")
+            if os.path.exists(memory_file):
+                print(f"Loading existing memory bank from: {memory_file}")
+        
+        if memory_file and os.path.exists(memory_file):
             try:
                 memory_bank.load(memory_file)
-                print(f"Loaded {len(memory_bank.all_entries())} memories from {memory_file}")
+                print(f"✓ Loaded {len(memory_bank.all_entries())} memories")
             except Exception as e:
                 print(f"Warning: Failed to load memory bank: {e}")
-        print("=" * 10)
-        print("MEMORY BANK ENABLED")
-        print(f"Importance threshold: {MEMORY_IMPORTANCE_THRESHOLD}")
-        print("=" * 10)
+        
+        # Create MemoryManager only in "train" mode
+        if MEMORY_MODE == "train":
+            memory_manager = MemoryManager(memory_bank, model=MODEL)
+            print("=" * 10)
+            print("MEMORY BANK ENABLED (TRAIN MODE)")
+            print(f"Importance threshold: {MEMORY_IMPORTANCE_THRESHOLD}")
+            print("=" * 10)
+        else:
+            # "eval" mode: read-only
+            memory_manager = None
+            print("=" * 10)
+            print("MEMORY BANK ENABLED (EVAL MODE - READ-ONLY)")
+            print("Memories will be used for agent context, but not updated")
+            print("=" * 10)
     else:
         print("Memory bank disabled (set USE_MEMORY_BANK=1 to enable)")
 
@@ -112,9 +135,11 @@ def main():
     accs, resp_cnts, importances = [], 0, []
     completion_list = []
     total_prompt_tokens, total_completion_tokens = 0, 0
+    question_counter = 0
 
     try:
         for que, ans in qa_pairs:
+            question_counter += 1
             llmlp.zero_grad()
             # Forward phase: pass memory_bank to agents if enabled
             res, resp_cnt, completions, prompt_tokens, completion_tokens = llmlp.forward(que, memory_bank=memory_bank)
@@ -152,10 +177,17 @@ def main():
                     # Use MemoryManager to decide ADD/UPDATE/DELETE based on agent's experience
                     try:
                         event = memory_manager.process_fact(experience, owner=top_role)
+                        # Log memory operation with question context
+                        question_preview = que[:80] + "..." if len(que) > 80 else que
+                        print(f"[Memory Q{question_counter}] {event.operation.value} by {top_role} (imp={max_imp:.3f})")
+                        print(f"  Question: {question_preview}")
                         if event.operation.value != "NOOP":
-                            print(f"[Memory] {event.operation.value} ({top_role}): {event.reason[:100]}")
+                            if event.new_text:
+                                experience_preview = event.new_text[:100] + "..." if len(event.new_text) > 100 else event.new_text
+                                print(f"  Memory: {experience_preview}")
+                            print(f"  Reason: {event.reason}")
                     except Exception as e:
-                        print(f"Warning: Memory processing failed: {e}")
+                        print(f"[Memory Q{question_counter}] ERROR: Memory processing failed: {e}")
                         import traceback
                         traceback.print_exc()
 
@@ -169,8 +201,8 @@ def main():
             with open(DIR_NAME+'/'+EXP_NAME+'_'+str(len(ROLES))+'3.json', 'a') as f:
                 f.write(json.dumps(completions) + '\n')
             
-            # Periodic Memory Bank saving - every 100 questions
-            if memory_bank is not None and len(accs) % 100 == 0 and len(accs) > 0:
+            # Periodic Memory Bank saving - every 100 questions (only in train mode)
+            if memory_bank is not None and MEMORY_MODE == "train" and len(accs) % 100 == 0 and len(accs) > 0:
                 memory_file = os.path.join(DIR_NAME, "memory_bank.json")
                 try:
                     memory_bank.save(memory_file)
@@ -198,8 +230,8 @@ def main():
         f.write(str(total_prompt_tokens) + '\n')
         f.write(str(total_completion_tokens) + '\n')
     
-    # Final Memory Bank save
-    if memory_bank is not None:
+    # Final Memory Bank save (only in train mode)
+    if memory_bank is not None and MEMORY_MODE == "train":
         memory_file = os.path.join(DIR_NAME, "memory_bank.json")
         try:
             print(f"[Memory] Attempting final save to {memory_file}")
@@ -209,6 +241,8 @@ def main():
             print(f"Error: Failed to save memory bank: {e}")
             import traceback
             traceback.print_exc()
+    elif memory_bank is not None and MEMORY_MODE == "eval":
+        print("[Memory] Eval mode - Memory Bank not saved (read-only)")
     else:
         print("[Memory] No memory bank to save")
 

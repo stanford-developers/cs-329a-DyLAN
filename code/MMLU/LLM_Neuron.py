@@ -94,12 +94,12 @@ class LLMNeuron:
 
         contexts.append(construct_message(formers, question, self.qtype))
         self.reply, self.prompt_tokens, self.completion_tokens = generate_answer(contexts, self.model)
-        print(self.get_reply())
+        # print(self.get_reply())  # Agent reply output disabled
         # parse answer
         self.answer = self.ans_parser(self.reply)
         weights = self.weights_parser(self.reply)
         if len(weights) != len(formers):
-            print("miss match!")
+            # print("miss match!")  # Debug output disabled
             weights = [0 for _ in range(len(formers))]
 
         shuffled_pairs = list(zip(shuffled_idxs, weights, formers))
@@ -110,7 +110,7 @@ class LLMNeuron:
         for _, eid in formers:
             self.from_edges[eid].weight = weights[lp] / 5 if 0 < weights[lp] <= 5 else (1 if weights[lp] > 5 else 0)
             lp += 1
-        print([self.from_edges[eid].weight for _, eid in formers])
+        # print([self.from_edges[eid].weight for _, eid in formers])  # Debug output disabled
         # normalize weights
         total = sum([self.from_edges[eid].weight for _, eid in formers])
         if total > 0:
@@ -120,8 +120,8 @@ class LLMNeuron:
             for _, eid in formers:
                 self.from_edges[eid].weight = 1 / len(formers)
 
-        print(self.answer)
-        print([edge.weight for edge in self.from_edges])
+        # print(self.answer)  # Debug output disabled
+        # print([edge.weight for edge in self.from_edges])  # Debug output disabled
         
     def get_context(self):
         if self.qtype == "single_choice":
