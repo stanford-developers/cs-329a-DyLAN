@@ -32,36 +32,40 @@ class MemoryBank:
         Initialize memory bank.
         
         Args:
-            embed_fn: Optional embedding function. If None, uses simple word overlap similarity.
+            embed_fn: Optional embedding function. If None, uses SentenceTransformer.
         """
         self.entries: dict[str, MemoryEntry] = {}
         self.embeddings: dict[str, np.ndarray] = {}
         
         if embed_fn is None:
-            # Default: use simple word overlap similarity (simple TF-IDF style implementation)
-            self.embed_fn = self._simple_text_embedding
+            # Default: use SentenceTransformer
+            self.embed_fn = self._sentence_transformer_embedding
+            self._init_sentence_transformer()
         else:
             self.embed_fn = embed_fn
     
-    def _simple_text_embedding(self, text: str) -> np.ndarray:
+    def _init_sentence_transformer(self):
+        """Initialize SentenceTransformer model (called once on first use)"""
+        try:
+            from sentence_transformers import SentenceTransformer
+            print("Loading SentenceTransformer model: all-MiniLM-L6-v2")
+            self._st_model = SentenceTransformer('all-MiniLM-L6-v2')
+            print("SentenceTransformer model loaded successfully")
+        except ImportError:
+            print("Error: sentence-transformers not installed")
+            print("Install with: pip install sentence-transformers")
+            raise ImportError("sentence-transformers package is required")
+    
+    def _sentence_transformer_embedding(self, text: str) -> np.ndarray:
         """
-        Simple text embedding (based on word frequency).
+        Use SentenceTransformer to generate embeddings (384 dimensions).
+        """
+        if not text or not text.strip():
+            return np.zeros(384)
         
-        This is a fallback implementation. In practice, it's recommended to inject a better embedding function
-        (e.g., sentence-transformers, OpenAI embeddings, etc.).
-        """
-        words = text.lower().split()
-        # Simple word frequency vector (vocabulary size dimension, simplified to fixed dimension here)
-        # In practice, should use a real embedding model
-        vec = np.zeros(128)  # Fixed dimension
-        for i, word in enumerate(words[:128]):
-            # Simple hash-based embedding
-            hash_val = hash(word) % 128
-            vec[hash_val] += 1.0 / (i + 1)  # Position weighting
-        norm = np.linalg.norm(vec)
-        if norm > 0:
-            vec = vec / norm
-        return vec
+        # Generate normalized embedding
+        embedding = self._st_model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
+        return embedding
     
     def add(self, entry: MemoryEntry) -> MemoryUpdateEvent:
         """
@@ -226,72 +230,94 @@ class MemoryBank:
     
     def save(self, filepath: str) -> None:
         """
-        Save memory bank to JSON file in simplified format.
+        Save memory bank to JSON file (text only) and numpy file (embeddings).
         
-        Format: {
-            "AgentRole": {
-                "1": "memory_content",
-                "2": "memory_content"
-            }
-        }
+        Creates two files:
+        1. {filepath}: JSON with text (human-readable)
+        2. {filepath}.npy: Numpy file with embeddings (fast loading)
         
         Args:
-            filepath: Save path
+            filepath: Save path for JSON file
         """
         # Group memories by owner (agent role)
         data = {}
+        embedding_data = {}
+        
         for entry in self.entries.values():
             if entry.owner not in data:
                 data[entry.owner] = {}
+                embedding_data[entry.owner] = {}
             
             # Use a simple counter for each agent's memories
             memory_count = len(data[entry.owner]) + 1
-            data[entry.owner][str(memory_count)] = entry.text
+            memory_id = str(memory_count)
+            
+            # Save text to JSON
+            data[entry.owner][memory_id] = entry.text
+            
+            # Save embedding separately
+            embedding_data[entry.owner][memory_id] = self.embeddings[entry.id]
         
+        # Save JSON (text only, human-readable)
         os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else ".", exist_ok=True)
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        # Save embeddings as numpy file
+        embedding_filepath = filepath.replace('.json', '_embeddings.npz')
+        np.savez_compressed(embedding_filepath, **{
+            f"{owner}_{mem_id}": emb 
+            for owner, mems in embedding_data.items() 
+            for mem_id, emb in mems.items()
+        })
     
     def load(self, filepath: str) -> None:
         """
-        Load memory bank from JSON file in simplified format.
+        Load memory bank from JSON file.
         
-        Expected format: {
-            "AgentRole": {
-                "1": "memory_content",
-                "2": "memory_content"
-            }
-        }
-        
-        Note: Embeddings are recomputed after loading.
+        Loads text from JSON and embeddings from .npz file if available.
+        If embeddings file doesn't exist, recomputes embeddings from text.
         
         Args:
-            filepath: File path
+            filepath: File path to JSON file
         """
+        # Load text from JSON
         with open(filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
         self.entries = {}
         self.embeddings = {}
         
-        # Handle both old and new formats for backward compatibility
-        if "entries" in data:
-            # Old format - convert to new structure
-            for entry_dict in data["entries"]:
-                entry = MemoryEntry.from_dict(entry_dict)
-                self.entries[entry.id] = entry
-                self.embeddings[entry.id] = self.embed_fn(entry.text)
-        else:
-            # New format - agent-based dictionary
-            for owner, memories in data.items():
-                for memory_id, memory_text in memories.items():
-                    entry_id = f"mem_{owner}_{memory_id}"
-                    entry = MemoryEntry(
-                        id=entry_id,
-                        owner=owner,
-                        text=memory_text
-                    )
-                    self.entries[entry_id] = entry
+        # Try to load pre-computed embeddings
+        embedding_filepath = filepath.replace('.json', '_embeddings.npz')
+        precomputed_embeddings = {}
+        
+        if os.path.exists(embedding_filepath):
+            try:
+                loaded = np.load(embedding_filepath)
+                precomputed_embeddings = {key: loaded[key] for key in loaded.files}
+                print(f"Loaded precomputed embeddings from {embedding_filepath}")
+            except Exception as e:
+                print(f"Warning: Failed to load embeddings file: {e}")
+        
+        # Load memories
+        for owner, memories in data.items():
+            for memory_id, memory_text in memories.items():
+                entry_id = f"mem_{owner}_{memory_id}"
+                
+                entry = MemoryEntry(
+                    id=entry_id,
+                    owner=owner,
+                    text=memory_text
+                )
+                self.entries[entry_id] = entry
+                
+                # Use precomputed embedding if available, otherwise compute
+                emb_key = f"{owner}_{memory_id}"
+                if emb_key in precomputed_embeddings:
+                    self.embeddings[entry_id] = precomputed_embeddings[emb_key]
+                else:
+                    # Recompute embedding from text
                     self.embeddings[entry_id] = self.embed_fn(memory_text)
     
     def create_entry(

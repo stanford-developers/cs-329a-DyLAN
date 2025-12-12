@@ -70,7 +70,7 @@ class LLMLP:
         for node in self.nodes:
             node.deactivate()
 
-    def forward(self, question):
+    def forward(self, question, memory_bank=None):
         def get_completions():
             # get completions
             completions = [[] for _ in range(self.agents)]
@@ -96,8 +96,8 @@ class LLMLP:
 
         activated_indices = []
         for idx, node_idx in enumerate(loop_indices):
-            print(0, idx)
-            self.nodes[node_idx].activate(question)
+            # print(0, idx)  # Debug output disabled
+            self.nodes[node_idx].activate(question, memory_bank=memory_bank)
             resp_cnt += 1
             total_prompt_tokens += self.nodes[node_idx].prompt_tokens
             total_completion_tokens += self.nodes[node_idx].completion_tokens
@@ -113,8 +113,8 @@ class LLMLP:
 
         activated_indices = []
         for idx, node_idx in enumerate(loop_indices):
-            print(1, idx)
-            self.nodes[node_idx].activate(question)
+            # print(1, idx)  # Debug output disabled
+            self.nodes[node_idx].activate(question, memory_bank=memory_bank)
             resp_cnt += 1
             total_prompt_tokens += self.nodes[node_idx].prompt_tokens
             total_completion_tokens += self.nodes[node_idx].completion_tokens
@@ -147,8 +147,8 @@ class LLMLP:
             for idx, node_idx in enumerate(loop_indices):
                 # TODO: report bug # if idx in idx_mask:
                 if node_idx % self.agents in idx_mask:
-                    print(rid, idx)
-                    self.nodes[node_idx].activate(question)
+                    # print(rid, idx)  # Debug output disabled
+                    self.nodes[node_idx].activate(question, memory_bank=memory_bank)
                     resp_cnt += 1
                     total_prompt_tokens += self.nodes[node_idx].prompt_tokens
                     total_completion_tokens += self.nodes[node_idx].completion_tokens
