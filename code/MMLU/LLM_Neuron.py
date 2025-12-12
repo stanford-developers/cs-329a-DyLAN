@@ -1,7 +1,16 @@
 import random
 import re
+import json
+
 from utils import parse_single_choice, generate_answer
-from prompt_lib import ROLE_MAP, construct_ranking_message, construct_message, SYSTEM_PROMPT_MMLU, ROLE_MAP_MATH, SYSTEM_PROMPT_MATH
+from prompt_lib import (
+    ROLE_MAP,
+    construct_ranking_message,
+    construct_message,
+    SYSTEM_PROMPT_MMLU,
+    ROLE_MAP_MATH,
+    SYSTEM_PROMPT_MATH,
+)
 
 
 class LLMNeuron:
@@ -94,12 +103,12 @@ class LLMNeuron:
 
         contexts.append(construct_message(formers, question, self.qtype))
         self.reply, self.prompt_tokens, self.completion_tokens = generate_answer(contexts, self.model)
-        # print(self.get_reply())  # Agent reply output disabled
+        print(self.get_reply())
         # parse answer
         self.answer = self.ans_parser(self.reply)
         weights = self.weights_parser(self.reply)
         if len(weights) != len(formers):
-            # print("miss match!")  # Debug output disabled
+            print("miss match!")
             weights = [0 for _ in range(len(formers))]
 
         shuffled_pairs = list(zip(shuffled_idxs, weights, formers))
@@ -120,21 +129,47 @@ class LLMNeuron:
             for _, eid in formers:
                 self.from_edges[eid].weight = 1 / len(formers)
 
-        # print(self.answer)  # Debug output disabled
-        # print([edge.weight for edge in self.from_edges])  # Debug output disabled
-        
+        print(self.answer)
+        print([edge.weight for edge in self.from_edges])
+
     def get_context(self):
         if self.qtype == "single_choice":
             sys_prompt = ROLE_MAP[self.role] + "\n" + SYSTEM_PROMPT_MMLU
+
         elif self.qtype == "math_exp":
-            sys_prompt = ROLE_MAP_MATH[self.role] + "\n" + SYSTEM_PROMPT_MATH
+            # ROLE_MAP_MATH should normally be a dict, but PromptAgent can sometimes
+            # save it as a JSON string in the profile. Handle both cases.
+            role_map = ROLE_MAP_MATH
+
+            if isinstance(role_map, str):
+                try:
+                    parsed = json.loads(role_map)
+                    if isinstance(parsed, dict):
+                        role_map = parsed
+                    # if it parses but isn't a dict, we'll fall back below
+                except Exception:
+                    # If parsing fails, just fall back to a generic math role prompt.
+                    role_map = {}
+
+            # Fallback if the role is missing or ROLE_MAP_MATH was malformed
+            role_prompt = role_map.get(
+                self.role,
+                "You are a math expert. Solve the problem step by step, checking each calculation carefully.",
+            )
+            sys_prompt = role_prompt + "\n" + SYSTEM_PROMPT_MATH
+
         else:
             raise NotImplementedError("Error init question type")
+
         contexts = [{"role": "system", "content": sys_prompt}]
-        
-        formers = [(edge.a1.reply, eid) for eid, edge in enumerate(self.from_edges) if edge.a1.reply is not None and edge.a1.active]
+
+        formers = [
+            (edge.a1.reply, eid)
+            for eid, edge in enumerate(self.from_edges)
+            if edge.a1.reply is not None and edge.a1.active
+        ]
         return contexts, formers
-        
+
     def get_conversation(self):
         if not self.active:
             return []

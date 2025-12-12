@@ -299,21 +299,42 @@ def get_math_qa_pairs(sub_dir, min_file, max_file):
     return ret_list
 
 
-def is_equiv(str1, str2, verbose=False):
-    if str1 is None and str2 is None:
-        print("WARNING: Both None")
-        return True
+def is_equiv(str1, str2, verbose: bool = False) -> bool:
+    """
+    Task‑agnostic equivalence check used for both MMLU and MATH.
+
+    For math‑style outputs, we first try to extract a canonical short
+    answer from each string (using extract_math_answer). If both sides
+    yield non‑empty answers, we compare those. Otherwise we fall back
+    to normalized string equality.
+    """
     if str1 is None or str2 is None:
         return False
 
+    s1 = str(str1)
+    s2 = str(str2)
+
+    # --- 1) Try math-style answer extraction on both sides ---
     try:
-        ss1 = _strip_string(str1)
-        ss2 = _strip_string(str2)
+        a1 = extract_math_answer(s1)
+        a2 = extract_math_answer(s2)
         if verbose:
-            print(ss1, ss2)
-        return ss1 == ss2
-    except:
-        return str1 == str2
+            print(f"[is_equiv] a1={a1!r}, a2={a2!r}")
+        # If we got something non‑empty from both, trust that.
+        if a1 and a2:
+            return a1 == a2
+    except Exception as e:
+        if verbose:
+            print(f"[is_equiv] extract_math_answer failed: {e!r}")
+
+    # --- 2) Fallback: normalized raw‑string equality (MMLU, etc.) ---
+    try:
+        n1 = _strip_string(s1)
+        n2 = _strip_string(s2)
+        return n1 == n2
+    except Exception:
+        return s1.strip() == s2.strip()
+
 
 
 def extract_math_answer(pred_str):
