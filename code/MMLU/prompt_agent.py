@@ -588,7 +588,7 @@ No explanations, no markdown, no backticks.
             {"role": "user", "content": user_msg},
         ],
         temperature=temperature,
-        max_tokens=2048,
+        max_tokens=8192,
     )
 
     # Defensive extraction in case Together returns unexpected structures
@@ -608,15 +608,90 @@ No explanations, no markdown, no backticks.
         return []
 
     # Try to parse as JSON array; be forgiving about extra wrapper text.
+    # Try to parse as JSON array; be forgiving about extra wrapper text
+    # or a truncated last element.
     def _parse_json_array(s: str) -> Any:
+        """
+        Best‑effort JSON parser for meta‑LLM output.
+
+        - First try to parse the whole string.
+        - Then try cropping from the first '[' to the last ']'.
+        - If that still fails (e.g., last element is truncated),
+          greedily extract as many complete JSON objects `{...}`
+          as possible and return them as a list.
+        """
+        # 1) Direct parse
         try:
             return json.loads(s)
         except Exception:
-            start = s.find("[")
-            end = s.rfind("]")
-            if start != -1 and end != -1 and end > start:
-                return json.loads(s[start: end + 1])
-            raise
+            pass
+
+        # 2) Try cropping to outer array
+        start = s.find("[")
+        end = s.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            subset = s[start: end + 1]
+            try:
+                return json.loads(subset)
+            except Exception:
+                # fall through to object‑by‑object parsing
+                pass
+
+        # 3) Last resort: extract individual JSON objects `{ ... }`
+        objs: List[Any] = []
+        buf = ""
+        depth = 0
+        in_string = False
+        escape = False
+
+        for ch in s:
+            # Wait until we see the start of an object
+            if not buf:
+                if ch.isspace():
+                    continue
+                if ch != "{":
+                    continue
+                buf = ch
+                depth = 1
+                in_string = False
+                escape = False
+                continue
+
+            buf += ch
+
+            if escape:
+                escape = False
+                continue
+
+            if ch == "\\":
+                escape = True
+                continue
+
+            if ch == '"':
+                in_string = not in_string
+                continue
+
+            if not in_string:
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        # End of one candidate object
+                        try:
+                            obj = json.loads(buf.strip().rstrip(","))
+                            objs.append(obj)
+                        except Exception:
+                            # If this object is malformed, just drop it
+                            pass
+                        buf = ""
+
+        if objs:
+            # Treat the extracted objects as the array contents
+            return objs
+
+        # Give up if nothing was recoverable
+        raise RuntimeError("Could not parse any JSON objects from meta‑LLM output")
 
     try:
         data = _parse_json_array(content)

@@ -352,7 +352,7 @@ def construct_weight_judge_message(responses, question, qtype):
         "for correctness, completeness, and clarity. Output **only** a JSON array of k non‑negative "
         "numbers that **sum to 1**, representing how much credit each solution deserves: "
         "[w1, w2, ..., wk].\n"
-        "Return **only** the JSON array — no prose, no code fences, no explanation."
+        " "
     )
 
     messages = [
