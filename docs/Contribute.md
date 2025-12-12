@@ -460,7 +460,8 @@ multi-agent collaboration solving problems from different perspectives.
 
 ### 10. Run evaluation with reduced roles **(+ bootstrap CIs)**
 
-After running the main experiment and generating importance scores, you can evaluate with a reduced team and get confidence intervals using `exp_mmlu_evaluation.sh`.
+After running the main experiment and generating importance scores, you can evaluate with a reduced team and get
+confidence intervals using `exp_mmlu_evaluation.sh`.
 
 ```bash
 # From repo root or code/MMLU
@@ -489,32 +490,43 @@ N_BOOT=5000 bash exp_mmlu_evaluation.sh
 
 #### What the script does
 
-* **Role selection (post‑selection / “evaluation”):** picks the top‑N roles per subject from `importance_1to7.csv` and re‑runs evaluation with those roles only.
+* **Role selection (post‑selection / “evaluation”):** picks the top‑N roles per subject from `importance_1to7.csv` and
+  re‑runs evaluation with those roles only.
 * **Pre‑selection metrics (7 roles):** computes baseline (full‑team) metrics directly from `importance_1to7.csv`.
 * **Metrics reported:**
-  Accuracy, **API calls** (total model responses), **tokens‑in**, **tokens‑out** — each **overall** and by **meta‑category** (STEM; humanities; social sciences; other (business, health, misc.)).
-* **Confidence intervals:** prints **95% bootstrap CIs** (1,000 reps by default) for every metric, both **pre** and **post** selection.
+  Accuracy, **API calls** (total model responses), **tokens‑in**, **tokens‑out** — each **overall** and by *
+  *meta‑category** (STEM; humanities; social sciences; other (business, health, misc.)).
+* **Confidence intervals:** prints **95% bootstrap CIs** (1,000 reps by default) for every metric, both **pre** and *
+  *post** selection.
 
 > **Aside — How the bootstrap CIs work (in plain English)**
-> We treat each **test file** as a “unit” and resample those units **with replacement** 1,000×. For each resample we recompute aggregate metrics (accuracy, API calls, tokens‑in/out). The **2.5th–97.5th percentiles** across those resamples form the **95% CI**.
+> We treat each **test file** as a “unit” and resample those units **with replacement** 1,000×. For each resample we
+> recompute aggregate metrics (accuracy, API calls, tokens‑in/out). The **2.5th–97.5th percentiles** across those
+> resamples form the **95% CI**.
 > – This is a **block bootstrap** over tests, which respects per‑test correlation among questions.
-> – If pre‑selection tokens were not logged, we estimate them from post‑selection tokens using a single global **response‑ratio** (R=\frac{\text{total API calls (pre)}}{\text{total API calls (post)}}). Estimated token totals are clearly marked **“(est.)”** in the console output.
+> – If pre‑selection tokens were not logged, we estimate them from post‑selection tokens using a single global *
+*response‑ratio** (R=\frac{\text{total API calls (pre)}}{\text{total API calls (post)}}). Estimated token totals are
+> clearly marked **“(est.)”** in the console output.
 
 #### Output files
 
 * `evaluation_results_<N>roles.json` — per‑test details for the reduced‑role run (post‑selection).
 * `selected_roles_<N>roles.json` — the chosen roles per subject.
-* `metrics_summary_<N>roles.json` — **the main artifact**: overall and meta‑category **pre vs. post** metrics with **95% CIs**, plus a `notes` block indicating whether pre‑tokens were estimated and the value of (R) when applicable.
+* `metrics_summary_<N>roles.json` — **the main artifact**: overall and meta‑category **pre vs. post** metrics with **95%
+  CIs**, plus a `notes` block indicating whether pre‑tokens were estimated and the value of (R) when applicable.
 * Per‑test folders under the output directory with raw logs and result artifacts.
 
-> **Tip**: previous versions also generated `compare_with_full.py`. The new summary JSON already includes the pre‑vs‑post comparison and CIs; you no longer need that helper.
+> **Tip**: previous versions also generated `compare_with_full.py`. The new summary JSON already includes the
+> pre‑vs‑post comparison and CIs; you no longer need that helper.
 
 #### Interpreting metrics
 
 * **Accuracy** is aggregated over all questions (or within each meta‑category).
 * **API calls** = total number of model responses consumed by the pipeline (sum of per‑question response counts).
 * **Tokens‑in/out** = sum of prompt/completion tokens across all questions (or within a meta‑category).
-* **Pre‑selection tokens**: if not logged in `importance_1to7.csv`, we estimate them from post‑selection tokens using the response‑ratio (R). Estimated values are annotated as **(est.)** in the console and captured in `metrics_summary_*.json > notes`.
+* **Pre‑selection tokens**: if not logged in `importance_1to7.csv`, we estimate them from post‑selection tokens using
+  the response‑ratio (R). Estimated values are annotated as **(est.)** in the console and captured in
+  `metrics_summary_*.json > notes`.
 
 #### Usage examples
 
@@ -534,7 +546,8 @@ bash exp_mmlu_evaluation.sh --max-parallel 8 --num-roles 4
 
 ### Optional: self-rationalizing evaluator (rationale for scoring)
 
-You can force agents to provide a more complete rationale for the scores they give to the answers they were provided with.
+You can force agents to provide a more complete rationale for the scores they give to the answers they were provided
+with.
 
 **Turn it on**
 
@@ -547,15 +560,17 @@ export RATIONALE=1   # 0 (default) = off, 1 = on
 bash exp_mmlu.sh
 ```
 
-
 ### Optional: quality‑aware AIP in the last round (LLM‑as‑Judge)
 
-When multiple **last‑round** agents produce the **same final answer**, DyLAN by default splits their Agent Importance equally in the backward pass. You can instead enable an **LLM judge** that returns a soft weight distribution based on the **quality of their reasoning**.
+When multiple **last‑round** agents produce the **same final answer**, DyLAN by default splits their Agent Importance
+equally in the backward pass. You can instead enable an **LLM judge** that returns a soft weight distribution based on
+the **quality of their reasoning**.
 
 **What it does**
 
 * Gathers all last‑round, same‑answer rationales; **shuffles** order to reduce position bias.
-* Asks the model to return JSON weights `[w1,…,wk]` with `wi ≥ 0` and `∑wi = 1`, then maps them back to the original agents.
+* Asks the model to return JSON weights `[w1,…,wk]` with `wi ≥ 0` and `∑wi = 1`, then maps them back to the original
+  agents.
 * Earlier layers still aggregate via peer‑rating edges.
 
 **Enable it**
@@ -572,7 +587,8 @@ The evaluation scripts above work in either mode; metrics/CI reporting is unchan
 
 ### 11. Summarize an **existing** run (no re‑inference)
 
-If you already have a run directory with the usual artifacts (importance CSV and per‑test outputs), use `evaluate_existing_mmlu_run.sh` to compute the same metrics and **95% CIs** without re‑calling the model.
+If you already have a run directory with the usual artifacts (importance CSV and per‑test outputs), use
+`evaluate_existing_mmlu_run.sh` to compute the same metrics and **95% CIs** without re‑calling the model.
 
 **Expected layout (example):**
 
@@ -596,9 +612,12 @@ bash evaluate_existing_mmlu_run.sh \
 
 * Reads pre‑selection (7‑role) metrics from the `importance_1to7_*.csv` in `--run-dir`.
 * Parses post‑selection per‑test outputs under the evaluation results subfolder.
-* Computes **overall** and **meta‑category** metrics (accuracy, API calls, tokens‑in, tokens‑out) with **95% bootstrap CIs**.
-* Writes `metrics_summary_existing.json` into the run directory (same schema as the live evaluator’s `metrics_summary_<N>roles.json`) and prints a human‑readable summary to stdout.
-  If pre‑selection tokens are missing, it estimates them using the global response‑ratio (R) (marked **(est.)**), exactly as in the live evaluation script.
+* Computes **overall** and **meta‑category** metrics (accuracy, API calls, tokens‑in, tokens‑out) with **95% bootstrap
+  CIs**.
+* Writes `metrics_summary_existing.json` into the run directory (same schema as the live evaluator’s
+  `metrics_summary_<N>roles.json`) and prints a human‑readable summary to stdout.
+  If pre‑selection tokens are missing, it estimates them using the global response‑ratio (R) (marked **(est.)**),
+  exactly as in the live evaluation script.
 
 **Overrides (optional):**
 
@@ -647,7 +666,8 @@ The simple evaluation script provides:
 
 ### Baseline Evaluation (Single LLM Call)
 
-For comparison purposes, you can run a baseline evaluation that makes a single LLM call per question without multi-agent debate. This helps measure the improvement provided by the multi-agent system.
+For comparison purposes, you can run a baseline evaluation that makes a single LLM call per question without multi-agent
+debate. This helps measure the improvement provided by the multi-agent system.
 
 **What it does**
 
@@ -694,6 +714,7 @@ Results are saved to `baseline_[MODEL_NAME]/` directory with the usual file form
 
 Baseline outputs: baseline_*/
 Multi-agent outputs: mmlu_downsampled_*/
+
 ```
 ### Analyze Results:
 
@@ -724,7 +745,9 @@ echo "Frozen current results under: $BASE_RUN"
 ```
 
 ### Analyze the run and then upload to Google sheets
+
 #### TODO: Fix early stopping calculation but rest should be ok
+
 ```bash
 python code/MMLU/summarize_run_with_categories.py \
   --run-dir runs/baseline_20251101-1402 \
@@ -772,3 +795,12 @@ bash exp_mmlu_two_agent_debate.sh \
 bash exp_mmlu_two_agent_debate.sh \
   --importance-csv "runs/baseline_20251101-1402/importance_1to7_baseline.csv"
 ```
+
+### 15. MATH Datasets and other techniques
+
+There are equivalent run scripts for evaluating different methods on the MATH dataset and processing the MATH dataset.
+Similarly, you have download the MATH dataset under `data` and run the scripts under `code/preprocess`.
+
+All other scripts to run all the methods are under `code/MMLU`. The other directories like `code/HumanEval`,
+`code/demo`, `code/MATH` are older directories created by original owners of DyLAN framework. Our primary updates fall
+in `MMLU`, `memory_bank`, `preprocess`, and adding a `requirements.txt`
